@@ -68,9 +68,7 @@ inline void extract_rectangle(struct rtree_rect *rect,
 			rect->upper_point.coords[1] = mp_decode_num(&elems, 3);
 			break;
 		default:
-			tnt_raise(ClientError, ER_UNSUPPORTED,
-				  "R-Tree index", "Field should be array with "
-				  "size 2 (point) or 4 (rectangle)");
+			assert(false);
 
 		}
 		break;
@@ -90,8 +88,7 @@ inline void extract_rectangle(struct rtree_rect *rect,
 		rect->upper_point.coords[1] = mp_decode_num(&elems, 3);
 		break;
 	default:
-		tnt_raise(ClientError, ER_UNSUPPORTED,
-			  "R-Tree index", "Key should contain 2 (point) or 4 (rectangle) coordinates");
+		assert(false);
 
 	}
 	rtree_rect_normalize(rect);
@@ -148,7 +145,7 @@ RTreeIndex::RTreeIndex(struct key_def *key_def)
   : Index(key_def)
 {
 	assert(key_def->part_count == 1);
-	assert(key_def->parts[0].type = ARRAY);
+	assert(key_def->parts[0].type = BOX);
 	assert(key_def->is_unique == false);
 
 	if (rtree_page_pool_initialized == 0) {

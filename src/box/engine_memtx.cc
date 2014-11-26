@@ -184,15 +184,15 @@ MemtxFactory::keydefCheck(struct key_def *key_def)
 				tnt_raise(ClientError, ER_MODIFY_INDEX,
 					  (unsigned) key_def->iid,
 					  (unsigned) key_def->space_id,
-					  "RTREE index field type must be ARRAY");
+					  "RTREE index field type must be BOX");
 			}
 			break;
-		case ARRAY:
+		case BOX:
 			if (key_def->type != RTREE) {
 				tnt_raise(ClientError, ER_MODIFY_INDEX,
 					  (unsigned) key_def->iid,
 					  (unsigned) key_def->space_id,
-					  "ARRAY field type is not supported");
+					  "BOX field type is not supported");
 			}
 			break;
 		default:

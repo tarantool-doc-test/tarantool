@@ -233,7 +233,14 @@ tuple_init_field_map(struct tuple_format *format, struct tuple *tuple, uint32_t 
 		enum mp_type mp_type = mp_typeof(*pos);
 		mp_next(&pos);
 
-		key_mp_type_validate(*type, mp_type, ER_FIELD_TYPE, i);
+		if (field_special_validation[*type]) {
+			if (!field_special_validation[*type](d))
+				tnt_raise(ClientError, ER_FIELD_TYPE, i,
+					  "BOX (array with 2 (point)"
+					  " or 4 (rectangle) numbers)");
+		} else {
+			key_mp_type_validate(*type, mp_type, ER_FIELD_TYPE, i);
+		}
 
 		if (*offset < 0 && *offset != INT32_MIN)
 			field_map[*offset] = d - tuple->data;

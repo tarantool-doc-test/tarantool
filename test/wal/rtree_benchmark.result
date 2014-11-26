@@ -12,11 +12,11 @@ s:create_index('primary')
   name: primary
   type: TREE
 ...
-s:create_index('spatial', { type = 'rtree', unique = false, parts = {2, 'array'}})
+s:create_index('spatial', { type = 'rtree', unique = false, parts = {2, 'box'}})
 ---
 - unique: false
   parts:
-  - type: ARRAY
+  - type: BOX
     fieldno: 2
   id: 1
   space_id: 512

@@ -75,8 +75,130 @@ schema_object_type(const char *name);
  * since there is a mismatch between enum name (STRING) and type
  * name literal ("STR"). STR is already used as Objective C type.
  */
-enum field_type { UNKNOWN = 0, NUM, STRING, ARRAY, NUMBER, field_type_MAX };
+enum field_type { UNKNOWN = 0, NUM, STRING, UINT, NUMBER, BOX, field_type_MAX };
 extern const char *field_type_strs[];
+typedef bool (*field_validation_func)(const char *);
+extern field_validation_func field_special_validation[];
+
+template <enum field_type T>
+struct MPTC;
+template <>
+struct MPTC<NUM> {
+	static bool IsValid(const char *p) { return mp_typeof(*p) == MP_UINT; }
+};
+template <>
+struct MPTC<STRING> {
+	static bool IsValid(const char *p) { return mp_typeof(*p) == MP_STR; }
+};
+
+template <>
+struct MPTC<UINT> {
+	static bool IsValid(const char *p) { return mp_typeof(*p) == MP_UINT; }
+};
+
+template <>
+struct MPTC<NUMBER> {
+	static bool IsValid(const char *p)
+	{
+		const unsigned long long mask = (1ull << MP_INT) |
+						(1ull << MP_UINT) |
+						(1ull << MP_FLOAT) |
+						(1ull << MP_DOUBLE);
+		return (1ull << mp_typeof(*p)) & mask;
+	}
+
+};
+
+struct MPTCEmptyArray {
+	static bool IsValid(const char *p)
+	{
+		if (mp_typeof(*p) != MP_ARRAY)
+			return false;
+		return mp_decode_array(&p) == 0;
+	}
+};
+
+template <uint32_t Len, class SubType>
+struct MPTCArray {
+	static bool IsValid(const char *p)
+	{
+		if (mp_typeof(*p) != MP_ARRAY)
+			return false;
+		uint32_t l = mp_decode_array(&p);
+		if (Len) {
+			if (l != Len)
+				return false;
+		}
+		for (uint32_t i = 0; ++i < l; ) {
+			if (!SubType::IsValid(p))
+				return false;
+			mp_next(&p);
+		}
+		if (!SubType::IsValid(p))
+			return false;
+		return true;
+	}
+};
+
+template <uint32_t Len, class SubType>
+struct MPTCSequence {
+	static bool IsValid(const char *p, uint32_t part_count)
+	{
+		if (part_count != Len)
+			return false;
+		if (Len)
+			for (uint32_t i = 0; ++i < Len; ) {
+				if (!SubType::IsValid(p))
+					return false;
+				mp_next(&p);
+			}
+		if (!SubType::IsValid(p))
+			return false;
+		return true;
+	}
+};
+
+template <class Type, typename...Other>
+struct MPTCOneOf {
+	static bool IsValid(const char *p)
+	{
+		return Type::IsValid(p) || MPTCOneOf<Other...>::IsValid(p);
+	}
+};
+
+template <class Type>
+struct MPTCOneOf<Type> {
+	static bool IsValid(const char *p)
+	{
+		return Type::IsValid(p);
+	}
+};
+
+template <class Type, typename...Other>
+struct MPTCOneOfSequence {
+	static bool IsValid(const char *p, uint32_t part_count)
+	{
+		return Type::IsValid(p, part_count)
+			|| MPTCOneOfSequence<Other...>::IsValid(p, part_count);
+	}
+};
+
+template <class Type>
+struct MPTCOneOfSequence<Type> {
+	static bool IsValid(const char *p, uint32_t part_count)
+	{
+		return Type::IsValid(p, part_count);
+	}
+};
+
+/* Array of two numbers, or array of four numbers */
+template <>
+struct MPTC<BOX> : MPTCOneOf<MPTCArray<2, MPTC<NUMBER> >, MPTCArray<4, MPTC<NUMBER> > > {};
+
+typedef MPTC<BOX> BoxValidator;
+
+/* One box, or two numbers, or four numbers */
+typedef MPTCOneOfSequence<MPTCSequence<1, MPTC<BOX> >, MPTCSequence<2, MPTC<NUMBER> >, MPTCSequence<4, MPTC<NUMBER> > > BoxKeyValidator;
 
 static inline uint32_t
 field_type_maxlen(enum field_type type)

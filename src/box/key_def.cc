@@ -33,15 +33,19 @@
 #include <stdio.h>
 #include "exception.h"
 
-const char *field_type_strs[] = {"UNKNOWN", "NUM", "STR", "ARRAY", "NUMBER", ""};
+const char *field_type_strs[] = {"UNKNOWN", "NUM", "STR", "UINT", "NUMBER", "BOX", ""};
 STRS(index_type, ENUM_INDEX_TYPE);
 
+field_validation_func field_special_validation[] = {0, 0, 0, 0, 0, BoxValidator::IsValid};
+
 const uint32_t key_mp_type[] = {
-	/* [UNKNOWN] = */ UINT32_MAX,
-	/* [NUM]     = */  1U << MP_UINT,
-	/* [STR]     =  */  1U << MP_STR,
-	/* [ARRAY]   =  */  1U << MP_ARRAY,
-	/* [NUMBER]  =  */  (1U << MP_UINT) | (1U << MP_INT) | (1U << MP_FLOAT) | (1U << MP_DOUBLE),
+	/* [UNKNOWN]= */ UINT32_MAX,
+	/* [NUM]    = */  1U << MP_UINT,
+	/* [STR]    = */  1U << MP_STR,
+	/* [UINT]   = */  1U << MP_UINT,
+	/* [NUMBER] = */  (1U << MP_UINT) | (1U << MP_INT) |
+			  (1U << MP_FLOAT) | (1U << MP_DOUBLE),
+	/* [BOX]    = */  0,
 };
 
 enum schema_object_type
