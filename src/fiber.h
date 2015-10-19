@@ -112,6 +112,8 @@ struct fiber {
 	struct fiber *caller;
 	/** Number of context switches. */
 	int csw;
+	/** time spent in fiber */
+	uint64_t time_spent;
 	/** Fiber id. */
 	uint32_t fid;
 	/** Fiber flags */
@@ -166,6 +168,9 @@ struct cord {
 	uint32_t max_fid;
 	pthread_t id;
 	const struct cord_on_exit *on_exit;
+	/** timestamp of last fiber switching,
+	  * updates in fiber_yield and fiber_start */
+	uint64_t switch_timestamp;
 	/** A helper hash to map id -> fiber. */
 	struct mh_i32ptr_t *fiber_registry;
 	/** All fibers */

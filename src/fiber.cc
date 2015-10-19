@@ -79,6 +79,16 @@ update_last_stack_frame(struct fiber *fiber)
 static void
 fiber_recycle(struct fiber *fiber);
 
+inline void
+fiber_update_timestamp(struct fiber *fiber, struct cord *cord)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	uint64_t tnow = ((uint64_t)ts.tv_sec) * 1000000000 + ts.tv_nsec;
+	fiber->time_spent += tnow - cord->switch_timestamp;
+	cord->switch_timestamp = tnow;
+}
+
 void
 fiber_call(struct fiber *callee)
 {
@@ -102,6 +112,9 @@ fiber_call(struct fiber *callee)
 void
 fiber_start(struct fiber *callee, ...)
 {
+	fiber_update_timestamp(callee, cord());
+	callee->time_spent = 0;
+
 	va_start(callee->f_data, callee);
 	fiber_call(callee);
 	va_end(callee->f_data);
@@ -243,6 +256,7 @@ fiber_yield(void)
 	update_last_stack_frame(caller);
 
 	callee->csw++;
+	fiber_update_timestamp(callee, cord);
 	coro_transfer(&caller->coro.ctx, &callee->coro.ctx);
 }
 

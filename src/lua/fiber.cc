@@ -246,6 +246,10 @@ lbox_fiber_statof(struct fiber *f, void *cb_ctx)
 	lua_pushnumber(L, f->csw);
 	lua_settable(L, -3);
 
+	lua_pushstring(L, "time spent");
+	lua_pushnumber(L, f->time_spent);
+	lua_settable(L, -3);
+
 	lua_pushliteral(L, "memory");
 	lua_newtable(L);
 	lua_pushstring(L, "used");
