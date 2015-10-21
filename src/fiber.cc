@@ -79,14 +79,16 @@ update_last_stack_frame(struct fiber *fiber)
 static void
 fiber_recycle(struct fiber *fiber);
 
-inline void
-fiber_update_timestamp(struct fiber *fiber, struct cord *cord)
+/** when fibers are switching, keeps timestamp and
+ *  returns delta with previous timestamp*/
+inline uint64_t
+cord_update_timestamp(struct cord *cord)
 {
+	uint64_t t_old = cord->switch_timestamp;
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	uint64_t tnow = ((uint64_t)ts.tv_sec) * 1000000000 + ts.tv_nsec;
-	fiber->time_spent += tnow - cord->switch_timestamp;
-	cord->switch_timestamp = tnow;
+	cord->switch_timestamp = ((uint64_t)ts.tv_sec) * 1000000000 + ts.tv_nsec;
+	return cord->switch_timestamp - t_old;
 }
 
 void
@@ -106,15 +108,14 @@ fiber_call(struct fiber *callee)
 	update_last_stack_frame(caller);
 
 	callee->csw++;
+	caller->time_spent += cord_update_timestamp(cord);
 	coro_transfer(&caller->coro.ctx, &callee->coro.ctx);
 }
 
 void
 fiber_start(struct fiber *callee, ...)
 {
-	fiber_update_timestamp(callee, cord());
 	callee->time_spent = 0;
-
 	va_start(callee->f_data, callee);
 	fiber_call(callee);
 	va_end(callee->f_data);
@@ -256,7 +257,7 @@ fiber_yield(void)
 	update_last_stack_frame(caller);
 
 	callee->csw++;
-	fiber_update_timestamp(callee, cord);
+	caller->time_spent += cord_update_timestamp(cord);
 	coro_transfer(&caller->coro.ctx, &callee->coro.ctx);
 }
 
@@ -518,6 +519,7 @@ fiber_new(const char *name, void (*f) (va_list))
 	}
 
 	fiber->f = f;
+	fiber->time_spent = 0;
 	/* fids from 0 to 100 are reserved */
 	if (++cord->max_fid < 100)
 		cord->max_fid = 101;
@@ -588,6 +590,7 @@ cord_init(const char *name)
 	region_create(&cord->sched.gc, &cord->slabc);
 	fiber_set_name(&cord->sched, "sched");
 	cord->fiber = &cord->sched;
+	cord_update_timestamp(cord);
 
 	cord->max_fid = 100;
 

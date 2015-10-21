@@ -79,6 +79,9 @@ target_link_libraries(fiber.test core)
 add_executable(fiber_stress.test fiber_stress.cc)
 target_link_libraries(fiber_stress.test core)
 
+add_executable(fiber_time.test fiber_time.cc)
+target_link_libraries(fiber_time.test core)
+
 add_executable(ipc.test ipc.cc unit.c ${CMAKE_SOURCE_DIR}/src/ipc.cc)
 target_link_libraries(ipc.test core)
 

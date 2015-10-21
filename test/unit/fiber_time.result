@@ -1,0 +1,5 @@
+	*** fiber_join_test ***
+fiber0 spent 0 * 10^-2 seconds
+fiber1 spent 17 * 10^-2 seconds
+fiber2 spent 27 * 10^-2 seconds
+	*** fiber_join_test: done ***
