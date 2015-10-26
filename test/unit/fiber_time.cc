@@ -18,6 +18,7 @@ fiber_join_test()
 {
 	header();
 
+	cord_start_profiling(cord());
 	struct fiber *fib1 = fiber_new("fib1", delay_f);
 	struct fiber *fib2 = fiber_new("fib2", delay_f);
 	fiber_set_joinable(fib1, true);

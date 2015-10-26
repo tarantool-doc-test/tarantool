@@ -79,16 +79,50 @@ update_last_stack_frame(struct fiber *fiber)
 static void
 fiber_recycle(struct fiber *fiber);
 
-/** when fibers are switching, keeps timestamp and
- *  returns delta with previous timestamp*/
-inline uint64_t
-cord_update_timestamp(struct cord *cord)
+/** keeps timestamp when fibers are switching */
+inline void
+cord_set_timestamp(struct cord *cord)
 {
-	uint64_t t_old = cord->switch_timestamp;
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
-	cord->switch_timestamp = ((uint64_t)ts.tv_sec) * 1000000000 + ts.tv_nsec;
-	return cord->switch_timestamp - t_old;
+	cord->switch_timestamp = ((uint64_t)ts.tv_sec)*1000000000 + ts.tv_nsec;
+}
+
+/** updates statistics in cord->fiber */
+inline void
+cord_update_time_counter(struct cord *cord)
+{
+	uint64_t t_old = cord->switch_timestamp;
+	cord_set_timestamp(cord);
+	cord->fiber->time_spent += cord->switch_timestamp - t_old;
+	cord->fiber->rolling_mean[0] += cord->switch_timestamp - t_old;
+	/* every second */
+	if (cord->switch_timestamp - cord->last_sec_timestamp >= 1000000000) {
+		double dt = (double) (cord->switch_timestamp -
+				      cord->last_sec_timestamp) / 1000000000;
+		cord->last_sec_timestamp = cord->switch_timestamp;
+		struct fiber *f;
+		rlist_foreach_entry(f, &cord->alive, link) {
+			rmean_roll(f->rolling_mean, dt);
+		}
+	}
+}
+
+void
+cord_start_profiling(struct cord *cord) {
+	cord_set_timestamp(cord);
+	cord->last_sec_timestamp = cord->switch_timestamp;
+	cord->profiling_enabled = true;
+
+	struct fiber *f;
+	rlist_foreach_entry(f, &cord->alive, link) {
+		f->time_spent = 0;
+	}
+}
+
+void
+cord_stop_profiling(struct cord *cord) {
+	cord->profiling_enabled = false;
 }
 
 void
@@ -101,6 +135,9 @@ fiber_call(struct fiber *callee)
 	assert(caller);
 	assert(caller != callee);
 
+	if (cord->profiling_enabled) {
+		cord_update_time_counter(cord);
+	}
 	cord->call_stack_depth++;
 	cord->fiber = callee;
 	callee->caller = caller;
@@ -108,7 +145,6 @@ fiber_call(struct fiber *callee)
 	update_last_stack_frame(caller);
 
 	callee->csw++;
-	caller->time_spent += cord_update_timestamp(cord);
 	coro_transfer(&caller->coro.ctx, &callee->coro.ctx);
 }
 
@@ -253,11 +289,13 @@ fiber_yield(void)
 	if (! rlist_empty(&caller->on_yield))
 		trigger_run(&caller->on_yield, NULL);
 
+	if (cord->profiling_enabled) {
+		cord_update_time_counter(cord);
+	}
 	cord->fiber = callee;
 	update_last_stack_frame(caller);
 
 	callee->csw++;
-	caller->time_spent += cord_update_timestamp(cord);
 	coro_transfer(&caller->coro.ctx, &callee->coro.ctx);
 }
 
@@ -590,7 +628,8 @@ cord_init(const char *name)
 	region_create(&cord->sched.gc, &cord->slabc);
 	fiber_set_name(&cord->sched, "sched");
 	cord->fiber = &cord->sched;
-	cord_update_timestamp(cord);
+	cord_set_timestamp(cord);
+	cord->profiling_enabled = false;
 
 	cord->max_fid = 100;
 

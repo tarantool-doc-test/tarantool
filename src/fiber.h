@@ -44,6 +44,7 @@
 #include "small/mempool.h"
 #include "small/region.h"
 #include "salad/rlist.h"
+#include "rmean.h"
 
 #if defined(__cplusplus)
 extern "C" {
@@ -114,6 +115,7 @@ struct fiber {
 	int csw;
 	/** time spent in fiber */
 	uint64_t time_spent;
+	int64_t rolling_mean[RMEAN_WINDOW + 1];
 	/** Fiber id. */
 	uint32_t fid;
 	/** Fiber flags */
@@ -169,8 +171,10 @@ struct cord {
 	pthread_t id;
 	const struct cord_on_exit *on_exit;
 	/** timestamp of last fiber switching,
-	  * updates in fiber_yield and fiber_start */
+	  * updates in fiber_yield and fiber_call */
 	uint64_t switch_timestamp;
+	uint64_t last_sec_timestamp;
+	bool profiling_enabled;
 	/** A helper hash to map id -> fiber. */
 	struct mh_i32ptr_t *fiber_registry;
 	/** All fibers */
@@ -270,6 +274,13 @@ cord_set_name(const char *name);
 /** True if this cord represents the process main thread. */
 bool
 cord_is_main();
+
+/** count fiber statistics */
+void
+cord_start_profiling(struct cord *cord);
+
+void
+cord_stop_profiling(struct cord *cord);
 
 void fiber_init(void);
 void fiber_free(void);

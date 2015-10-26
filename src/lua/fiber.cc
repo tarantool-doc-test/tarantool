@@ -245,10 +245,11 @@ lbox_fiber_statof(struct fiber *f, void *cb_ctx)
 	lua_pushstring(L, "csw");
 	lua_pushnumber(L, f->csw);
 	lua_settable(L, -3);
-
-	lua_pushstring(L, "time spent");
-	lua_pushnumber(L, f->time_spent);
-	lua_settable(L, -3);
+	if (cord()->profiling_enabled) {
+		lua_pushstring(L, "time spent");
+		lua_pushnumber(L, f->time_spent);
+		lua_settable(L, -3);
+	}
 
 	lua_pushliteral(L, "memory");
 	lua_newtable(L);
@@ -555,6 +556,44 @@ lbox_fiber_wakeup(struct lua_State *L)
 	return 0;
 }
 
+static int
+lbox_fiber_profile(struct lua_State *L)
+{
+	if (lua_gettop(L) == 0 && !cord()->profiling_enabled)
+		luaL_error(L, "fiber.profile(): use fiber.profile(true) "
+			      "to start profiling,\n"
+			      "and fiber.profile() to show results");
+	if (lua_gettop(L) != 0) {
+		bool enable = lua_toboolean(L, -1);
+		if (enable)
+			cord_start_profiling(cord());
+		else
+			cord_stop_profiling(cord());
+		return 0;
+	}
+
+	lua_newtable(L);
+	struct fiber *f;
+	int id = 1;
+	rlist_foreach_entry(f, &cord()->alive, link) {
+		double p = (double) rmean_mean(f->rolling_mean) / 10000000.0;
+
+		lua_pushnumber(L, id);
+		lua_createtable(L, 0, 3);
+
+		lua_pushnumber(L, f->fid);
+		lua_setfield(L, -2, "fid");
+		lua_pushstring(L, fiber_name(f));
+		lua_setfield(L, -2, "name");
+		lua_pushnumber(L, p);
+		lua_setfield(L, -2, "usage%");
+
+		lua_settable(L, -3);
+		id++;
+	}
+	return 1;
+}
+
 static const struct luaL_reg lbox_fiber_meta [] = {
 	{"id", lbox_fiber_id},
 	{"name", lbox_fiber_name},
@@ -583,6 +622,7 @@ static const struct luaL_reg fiberlib[] = {
 	{"create", lbox_fiber_create},
 	{"status", lbox_fiber_status},
 	{"name", lbox_fiber_name},
+	{"profile", lbox_fiber_profile},
 	{NULL, NULL}
 };
 
