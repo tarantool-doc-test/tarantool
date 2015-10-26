@@ -556,14 +556,33 @@ lbox_fiber_wakeup(struct lua_State *L)
 	return 0;
 }
 
+struct key_val {
+	double key;
+	void *val;
+};
+int key_val_cmp(const void *e1, const void *e2) {
+	if (((key_val *)e1)->key < ((key_val *)e2)->key)
+		return -1;
+	return ((key_val *)e1)->key > ((key_val *)e2)->key;
+}
 static int
 lbox_fiber_profile(struct lua_State *L)
 {
-	if (lua_gettop(L) == 0 && !cord()->profiling_enabled)
-		luaL_error(L, "fiber.profile(): use fiber.profile(true) "
-			      "to start profiling,\n"
-			      "and fiber.profile() to show results");
-	if (lua_gettop(L) != 0) {
+	int top_k = 0;
+	int args_n = lua_gettop(L);
+	const char *err_msg =
+		"fiber.profile(): use fiber.profile(true) to start profiling,\n"
+		"and fiber.profile() to show results";
+
+	if (args_n == 0 && !cord()->profiling_enabled)
+		luaL_error(L, err_msg);
+	if (args_n > 1 || (args_n == 1 && lua_type(L, -1) != LUA_TNUMBER &&
+			   lua_type(L, -1) != LUA_TBOOLEAN))
+		luaL_error(L, err_msg);
+
+	if (lua_type(L, -1) == LUA_TNUMBER) {
+		top_k = lua_tonumber(L, -1);
+	} else {
 		bool enable = lua_toboolean(L, -1);
 		if (enable)
 			cord_start_profiling(cord());
@@ -575,9 +594,23 @@ lbox_fiber_profile(struct lua_State *L)
 	lua_newtable(L);
 	struct fiber *f;
 	int id = 1;
+	int fibn = 0;
+	rlist_foreach_entry(f, &cord()->alive, link)
+			fibn++;
+	struct key_val *usage = (struct key_val *)
+			region_alloc(&cord()->fiber->gc,
+				     sizeof(key_val) * fibn);
+	int i = 0;
 	rlist_foreach_entry(f, &cord()->alive, link) {
-		double p = (double) rmean_mean(f->rolling_mean) / 10000000.0;
-
+		usage[i].key = (double) rmean_mean(f->rolling_mean) / 10000000.;
+		usage[i].val = f;
+		i++;
+	}
+	top_k = fibn - top_k;
+	if (top_k < 0 || top_k >= fibn)
+		top_k = 0;
+	for (int i = fibn - 1; i >= top_k; i--) {
+		f = (struct fiber *)usage[i].val;
 		lua_pushnumber(L, id);
 		lua_createtable(L, 0, 3);
 
@@ -585,7 +618,7 @@ lbox_fiber_profile(struct lua_State *L)
 		lua_setfield(L, -2, "fid");
 		lua_pushstring(L, fiber_name(f));
 		lua_setfield(L, -2, "name");
-		lua_pushnumber(L, p);
+		lua_pushnumber(L, usage[i].key);
 		lua_setfield(L, -2, "usage%");
 
 		lua_settable(L, -3);

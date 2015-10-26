@@ -10,7 +10,14 @@ delay_f(va_list ap)
 	fiber_sleep(0);
 	d = (fiber()->fid - 101) * 100500;
 	usleep(d);
-	return;
+
+
+	/*int dsum = (fiber()->fid - 101) * 5005000;
+	int switch_n = 1000;
+	for (int i = 0; i < switch_n; i++) {
+		usleep(dsum / switch_n);
+		fiber_sleep(0);
+	}*/
 }
 
 static void
@@ -30,11 +37,13 @@ fiber_join_test()
 	fiber_join(fib1);
 	fiber_join(fib2);
 	printf("fiber0 spent %d * 10^-2 seconds\n",
-	       (int)(fiber()->time_spent + 5000000) / 10000000);
+	       (int)((fiber()->time_spent + 5000000) / 10000000));
 	printf("fiber1 spent %d * 10^-2 seconds\n",
-	       (int)(fib1->time_spent + 5000000) / 10000000);
+	       (int)((fib1->time_spent + 5000000) / 10000000));
 	printf("fiber2 spent %d * 10^-2 seconds\n",
-	       (int)(fib2->time_spent + 5000000) / 10000000);
+	       (int)((fib2->time_spent + 5000000) / 10000000));
+	/* printf("fiber1: %.2lf%%\n", rmean_mean(fib1->rolling_mean) / 1E9);
+	printf("fiber2: %.2lf%%\n", rmean_mean(fib2->rolling_mean) / 1E9); */
 
 	footer();
 }

@@ -29,16 +29,12 @@
  * SUCH DAMAGE.
  */
 #include "rmean.h"
-
-#include "say.h"
-#include "assoc.h"
 #include "fiber.h"
 
 void
 rmean_roll(int64_t *value, double dt) {
 	value[0] /= dt;
 	int j = RMEAN_WINDOW;
-	/* in case when dt >= 2. we update not only last counter */
 	for (; j > (int)(dt + 0.1); j--)
 		value[j] = value[j - 1];
 	for (; j > 0; j--)
