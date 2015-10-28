@@ -557,32 +557,34 @@ lbox_fiber_wakeup(struct lua_State *L)
 }
 
 struct key_val {
-	double key;
+	float key;
+	const char *str_key;
+	int order;
 	void *val;
 };
-int key_val_cmp(const void *e1, const void *e2) {
+
+int key_val_cmp_asc(const void *e1, const void *e2) {
+	if (((key_val *)e1)->str_key)
+		return strcmp(((key_val *)e1)->str_key,
+			      ((key_val *)e2)->str_key);
 	if (((key_val *)e1)->key < ((key_val *)e2)->key)
 		return -1;
 	return ((key_val *)e1)->key > ((key_val *)e2)->key;
 }
+
+int key_val_cmp_desc(const void *e1, const void *e2) {
+	if (((key_val *)e1)->str_key)
+		return -strcmp(((key_val *)e1)->str_key,
+			      ((key_val *)e2)->str_key);
+	if (((key_val *)e1)->key > ((key_val *)e2)->key)
+		return -1;
+	return ((key_val *)e1)->key < ((key_val *)e2)->key;
+}
+
 static int
 lbox_fiber_profile(struct lua_State *L)
 {
-	int top_k = 0;
-	int args_n = lua_gettop(L);
-	const char *err_msg =
-		"fiber.profile(): use fiber.profile(true) to start profiling,\n"
-		"and fiber.profile() to show results";
-
-	if (args_n == 0 && !cord()->profiling_enabled)
-		luaL_error(L, err_msg);
-	if (args_n > 1 || (args_n == 1 && lua_type(L, -1) != LUA_TNUMBER &&
-			   lua_type(L, -1) != LUA_TBOOLEAN))
-		luaL_error(L, err_msg);
-
-	if (lua_type(L, -1) == LUA_TNUMBER) {
-		top_k = lua_tonumber(L, -1);
-	} else {
+	if (lua_gettop(L) == 1 && lua_isboolean(L, 1)) {
 		bool enable = lua_toboolean(L, -1);
 		if (enable)
 			cord_start_profiling(cord());
@@ -590,7 +592,78 @@ lbox_fiber_profile(struct lua_State *L)
 			cord_stop_profiling(cord());
 		return 0;
 	}
+	luaL_error(L, "Use fiber.profile(true/false) to start/stop profiling,\n"
+		      "and fiber.top([top_k,] [[order_by], ['desc'/'asc']]) "
+		      "to show results");
+	return 0;
+}
 
+
+static int
+lbox_fiber_top(struct lua_State *L)
+{
+	const char *val[5] = {
+		"fid",
+		"name",
+		"cpu%",
+		"used memory",
+		"total memory"
+	};
+	enum {
+		TOP_FIELD_FID = 0,
+		TOP_FIELD_NAME = 1,
+		TOP_FIELD_CPU = 2,
+		TOP_FIELD_USED_MEM = 3,
+		TOP_FIELD_TOTAL_MEM = 4,
+	};
+
+	char err_msg[256] =
+		"Use fiber.profile(true/false) to start/stop profiling,\n"
+		"and fiber.top([top_k,] [[order_by], ['desc'/'asc']]) "
+		"to show results";
+
+	int args_n = lua_gettop(L);
+	if (!cord()->profiling_enabled)
+		luaL_error(L, err_msg);
+	int has_num_arg = args_n >= 1 && lua_isnumber(L, 1);
+	if (args_n >= 1 && !lua_isnumber(L, 1) && !lua_isstring(L, 1))
+		luaL_error(L, err_msg);
+	if (args_n >= 1 + has_num_arg && !lua_isstring(L, 1 + has_num_arg))
+		luaL_error(L, err_msg);
+	if (args_n >= 2 + has_num_arg && !lua_isstring(L, 2 + has_num_arg))
+		luaL_error(L, err_msg);
+
+	int top_k = -1;
+	if (has_num_arg)
+		top_k = luaL_checknumber(L, 1);
+
+	int field_id = -1;
+	if (args_n >= 1 + has_num_arg) {
+		const char *arg_str = luaL_checkstring(L, 1 + has_num_arg);
+		int i;
+		for(i = 0; i < sizeof(val) / sizeof(const char *); i++)
+			if (strncmp(arg_str, val[i], strlen(arg_str)) == 0) {
+				if (field_id == -1) {
+					field_id = i;
+				} else {
+					field_id = -1;
+					break;
+				}
+			}
+		if (field_id == -1) {
+			sprintf(err_msg,  "There is no field with name %s.\n"
+					  "Use one from following list:\n", arg_str);
+			for(i = 0; i < sizeof(val) / sizeof(const char *) - 1; i++) {
+				strcat(err_msg, val[i]);
+				strcat(err_msg, ", ");
+			}
+			strcat(err_msg, val[i]);
+			strcat(err_msg, "\n");
+			luaL_error(L, err_msg);
+		}
+	} else {
+		field_id = TOP_FIELD_CPU;
+	}
 	lua_newtable(L);
 	struct fiber *f;
 	int id = 1;
@@ -600,26 +673,66 @@ lbox_fiber_profile(struct lua_State *L)
 	struct key_val *usage = (struct key_val *)
 			region_alloc(&cord()->fiber->gc,
 				     sizeof(key_val) * fibn);
+	memset(usage, 0, sizeof(key_val) * fibn);
+	int (*comparer)(const void *e1, const void *e2) = key_val_cmp_asc;
 	int i = 0;
 	rlist_foreach_entry(f, &cord()->alive, link) {
-		usage[i].key = (double) rmean_mean(f->rolling_mean) / 10000000.;
+		switch(field_id) {
+		case TOP_FIELD_FID:
+			usage[i].key = f->fid;
+			break;
+		case TOP_FIELD_NAME:
+			usage[i].str_key = fiber_name(f);
+			break;
+		case TOP_FIELD_CPU:
+			usage[i].key = (float) rmean_mean(f->rolling_mean)
+					/ 10000000.;
+			comparer = key_val_cmp_desc;
+			break;
+		case TOP_FIELD_USED_MEM:
+			usage[i].key = region_used(&f->gc);
+			comparer = key_val_cmp_desc;
+			break;
+		case TOP_FIELD_TOTAL_MEM:
+			usage[i].key = region_total(&f->gc) +
+						f->coro.stack_size +
+						sizeof(struct fiber);
+			comparer = key_val_cmp_desc;
+			break;
+		}
 		usage[i].val = f;
 		i++;
 	}
-	top_k = fibn - top_k;
+	if (args_n >= 2 + has_num_arg) {
+		const char *arg_str = luaL_checkstring(L, 2 + has_num_arg);
+		if (strcmp(arg_str, "asc") == 0)
+			comparer = key_val_cmp_asc;
+		else if (strcmp(arg_str, "desc") == 0)
+			comparer = key_val_cmp_desc;
+		else
+			luaL_error(L, "Use 'asc' or 'desc'");
+	}
+
+	qsort(usage, fibn, sizeof(key_val), comparer);
 	if (top_k < 0 || top_k >= fibn)
-		top_k = 0;
-	for (int i = fibn - 1; i >= top_k; i--) {
+		top_k = fibn;
+	for (int i = 0; i < top_k; i++) {
 		f = (struct fiber *)usage[i].val;
 		lua_pushnumber(L, id);
 		lua_createtable(L, 0, 3);
 
 		lua_pushnumber(L, f->fid);
-		lua_setfield(L, -2, "fid");
+		lua_setfield(L, -2, val[TOP_FIELD_FID]);
 		lua_pushstring(L, fiber_name(f));
-		lua_setfield(L, -2, "name");
-		lua_pushnumber(L, usage[i].key);
-		lua_setfield(L, -2, "usage%");
+		lua_setfield(L, -2, val[TOP_FIELD_NAME]);
+		lua_pushnumber(L, (float) rmean_mean(f->rolling_mean)
+			       / 10000000);
+		lua_setfield(L, -2, val[TOP_FIELD_CPU]);
+		lua_pushnumber(L, region_used(&f->gc));
+		lua_setfield(L, -2, val[TOP_FIELD_USED_MEM]);
+		lua_pushnumber(L, region_total(&f->gc) + f->coro.stack_size +
+			       sizeof(struct fiber));
+		lua_setfield(L, -2, val[TOP_FIELD_TOTAL_MEM]);
 
 		lua_settable(L, -3);
 		id++;
@@ -656,6 +769,7 @@ static const struct luaL_reg fiberlib[] = {
 	{"status", lbox_fiber_status},
 	{"name", lbox_fiber_name},
 	{"profile", lbox_fiber_profile},
+	{"top", lbox_fiber_top},
 	{NULL, NULL}
 };
 
