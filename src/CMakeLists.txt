@@ -3,13 +3,14 @@
 #
 enable_tnt_compile_flags()
 
-add_subdirectory(trivia)
-
 include_directories(${LIBEV_INCLUDE_DIR})
 include_directories(${LIBEIO_INCLUDE_DIR})
 include_directories(${LIBCORO_INCLUDE_DIR})
 include_directories(${LIBGOPT_INCLUDE_DIR})
 include_directories(${READLINE_INCLUDE_DIR})
+
+set(LIBUTIL_FREEBSD_SRC ${CMAKE_SOURCE_DIR}/third_party/libutil_freebsd)
+include_directories(${LIBUTIL_FREEBSD_SRC})
 
 # Compile src/lua/*.lua files into src/lua/*.lua.c sources
 set(lua_sources)
@@ -64,6 +65,7 @@ set (core_sources
      reflection.c
      assoc.c
      rmean.c
+     util.c
  )
 
 add_library(core STATIC ${core_sources})
@@ -74,7 +76,6 @@ target_link_libraries(core
 )
 
 set (server_sources
-     util.cc
      find_path.c
      sio.cc
      evio.cc
@@ -96,6 +97,7 @@ set (server_sources
      fiob.c
      tt_uuid.c
      uri.c
+     backtrace.cc
      proc_title.c
      coeio_file.cc
      lua/digest.cc
@@ -112,6 +114,26 @@ set (server_sources
      lua/clock.c
      ${lua_sources}
 )
+
+set(api_headers
+    ${CMAKE_BINARY_DIR}/src/trivia/config.h
+    ${CMAKE_SOURCE_DIR}/src/say.h
+    ${CMAKE_SOURCE_DIR}/src/fiber.h
+    ${CMAKE_SOURCE_DIR}/src/coio.h
+    ${CMAKE_SOURCE_DIR}/src/coeio.h
+    ${CMAKE_SOURCE_DIR}/src/lua/utils.h
+    ${CMAKE_SOURCE_DIR}/src/box/txn.h
+    ${CMAKE_SOURCE_DIR}/src/box/tuple.h
+    ${CMAKE_SOURCE_DIR}/src/box/schema.h
+    ${CMAKE_SOURCE_DIR}/src/box/box.h
+    ${CMAKE_SOURCE_DIR}/src/box/index.h
+    ${CMAKE_SOURCE_DIR}/src/box/func.h
+    ${CMAKE_SOURCE_DIR}/src/box/error.h
+    ${CMAKE_SOURCE_DIR}/src/box/lua/call.h
+    ${CMAKE_SOURCE_DIR}/src/latch.h
+    ${CMAKE_SOURCE_DIR}/src/fiber.h
+)
+rebuild_module_api(${api_headers})
 
 if (NOT TARGET_OS_DEBIAN_FREEBSD)
     if (TARGET_OS_FREEBSD)
@@ -174,7 +196,10 @@ add_subdirectory(box)
 set(TARANTOOL_C_FLAGS ${CMAKE_C_FLAGS} PARENT_SCOPE)
 set(TARANTOOL_CXX_FLAGS ${CMAKE_CXX_FLAGS} PARENT_SCOPE)
 
-add_executable(tarantool main.cc ffisyms.cc title.c)
+add_executable(
+	tarantool main.cc ffisyms.cc title.c
+	${LIBUTIL_FREEBSD_SRC}/flopen.c
+	${LIBUTIL_FREEBSD_SRC}/pidfile.c)
 add_dependencies(tarantool build_bundled_libs)
 target_link_libraries(tarantool box ${common_libraries})
 
