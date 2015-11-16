@@ -5,6 +5,13 @@ test_run = env.new()
 ---
 ...
 test_run:cmd('restart server default')
+fio = require('fio')
+---
+...
+test_run:cmd("push filter '"..fio.cwd().."' to '<CWD>'")
+---
+- true
+...
 space = box.schema.space.create('tweedledum')
 ---
 ...

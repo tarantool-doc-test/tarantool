@@ -993,6 +993,11 @@ iproto_set_listen(const char *uri)
 	static struct iproto_set_listen_msg msg;
 	iproto_set_listen_msg_init(&msg, uri);
 
+	/*
+	 * Note: skipped abspath (if URI designates a filesystem
+	 * path) since TXN thread is blocked until bind completes and
+	 * no one will chdir
+	 */
 	cpipe_push(&net_pipe, &msg);
 	/** Wait for the end of bind. */
 	fiber_yield();

@@ -1,6 +1,8 @@
 env = require('test_run')
 test_run = env.new()
 test_run:cmd('restart server default')
+fio = require('fio')
+test_run:cmd("push filter '"..fio.cwd().."' to '<CWD>'")
 
 space = box.schema.space.create('tweedledum')
 index = space:create_index('primary')

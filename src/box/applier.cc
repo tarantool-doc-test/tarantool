@@ -434,6 +434,20 @@ applier_new(const char *uri)
 	assert(rc == 0 && applier->uri.service != NULL);
 	(void) rc;
 
+	/* Make path absolute if URI designates a filesystem path. */
+	if (uri_is_unix_path(&applier->uri)) {
+		char path[PATH_MAX], *p;
+		if (applier->uri.service_len >= sizeof(path))
+			tnt_raise(SystemError, "URI too long: %s", uri);
+		memcpy(path, applier->uri.service, applier->uri.service_len);
+		path[applier->uri.service_len] = '\0';
+		p = abspath(path);
+		if (p == NULL)
+			tnt_raise(OutOfMemory, 1, "malloc", "abspath");
+		applier->uri.service = p;
+		applier->uri.service_len = strlen(p);
+	}
+
 	applier->last_row_time = ev_now(loop());
 	return applier;
 }
@@ -444,5 +458,13 @@ applier_delete(struct applier *applier)
 	assert(applier->reader == NULL);
 	iobuf_delete(applier->iobuf);
 	coio_close(loop(), &applier->io);
+
+	/*
+	 * If URI designates a filesystem path the service part came
+	 * from abspath and needs free()
+	 */
+	if (uri_is_unix_path(&applier->uri))
+		free((char *)applier->uri.service);
+
 	free(applier);
 }

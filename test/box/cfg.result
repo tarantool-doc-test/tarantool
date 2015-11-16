@@ -16,6 +16,13 @@ test_run:cmd("push filter ".."'\\.lua - internal file.*:[0-9]+: ' to '.lua - int
 ---
 - true
 ...
+fio = require('fio')
+---
+...
+test_run:cmd("push filter '"..fio.cwd().."' to '<CWD>'")
+---
+- true
+...
 box.cfg.nosuchoption = 1
 ---
 - error: '[string "-- load_cfg.lua - internal file..."]:<line>: Attempt to modify a read-only

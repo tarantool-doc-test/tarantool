@@ -4,10 +4,11 @@
 
 local tap = require('tap')
 local test = tap.test('cfg')
+local fio = require('fio')
 test:plan(3)
 
 config = {
-	pid_file = '1.pid',
+    pid_file = fio.abspath('1.pid'),
     logger="tarantool.log"
 }
 

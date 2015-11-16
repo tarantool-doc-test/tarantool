@@ -30,6 +30,10 @@ for k,v in pairs(box.cfg) do
     if k == 'listen' then
         v = 'port'
     end
+    local cwd = require('fio').cwd()
+    if type(v)=='string' and string.sub(v,1,#cwd)==cwd then
+        v = '<CWD>'.. string.sub(v,#cwd+1)
+    end
     if type(v) ~= 'table' and type(v) ~= 'function' then
         table.insert(t,k..':'..tostring(v))
     end

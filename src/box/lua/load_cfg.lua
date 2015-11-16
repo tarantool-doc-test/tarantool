@@ -19,6 +19,7 @@ int say_check_init_str(const char *, char**);
 
 local log = require('log')
 local json = require('json')
+local fio = require('fio')
 
 -- see default_cfg below
 local default_sophia_cfg = {
@@ -232,6 +233,29 @@ local function apply_default_cfg(cfg, default_cfg)
     end
 end
 
+-- If an URL designates a filesystem path convert it to the absolute path,
+-- otherwise return URL as is
+local function abspath_url(url, work_dir)
+    if string.match(url, '^unix/:') then
+        return 'unix/:'..fio.pathjoin2(work_dir, string.sub(url,7))
+    else
+        return url
+    end
+end
+
+-- Convert URLs in replication_source block using abspath_url
+local function abspath_replication_source(rsource, work_dir)
+    if type(rsource)=='table' then
+        local res = {}, _, url
+        for _, url in ipairs(rsource) do
+            table.insert(res, abspath_url(url, work_dir))
+        end
+        return res
+    else
+        return abspath_url(rsource, work_dir)
+    end
+end
+
 local function reload_cfg(oldcfg, cfg)
     local newcfg = prepare_cfg(cfg, default_cfg, template_cfg, modify_cfg)
     -- iterate over original table because prepare_cfg() may store NILs
@@ -239,6 +263,15 @@ local function reload_cfg(oldcfg, cfg)
         if dynamic_cfg[key] == nil and oldcfg[key] ~= val then
             box.error(box.error.RELOAD_CFG, key);
         end
+    end
+    -- Replace relative pathes with absolute ones
+    local work_dir = fio.cwd()
+    if cfg.listen then
+        cfg.listen = abspath_url(cfg.listen, work_dir)
+    end
+    if cfg.replication_source then
+        cfg.replication_source = abspath_replication_source(
+            cfg.replication_source, work_dir)
     end
     for key in pairs(cfg) do
         local val = newcfg[key]
@@ -276,6 +309,18 @@ setmetatable(box, {
      end
 })
 
+-- 'Fix' logger init string to use absolute path
+local function abspath_logger(logger, work_dir)
+    local prefix = ''
+    local path = string.gsub(
+        logger, '[^:|]*:', function(m) prefix=m; return '' end)
+    if prefix=='' and string.sub(path,1,1)~='|' or prefix=='file:' then
+        return prefix..fio.pathjoin2(work_dir, path)
+    else
+        return logger
+    end
+end
+
 local function load_cfg(cfg)
     cfg = prepare_cfg(cfg, default_cfg, template_cfg, modify_cfg)
     apply_default_cfg(cfg, default_cfg);
@@ -284,6 +329,29 @@ local function load_cfg(cfg)
     if not pcall(ffi.C.check_cfg) then
         box.cfg = load_cfg -- restore original box.cfg
         return box.error() -- re-throw exception from check_cfg()
+    end
+    -- Replace relative pathes with absolute ones
+    local fixups = {'snap_dir', 'wal_dir', 'sophia_dir', 'pid_file'}
+    local work_dir = fio.abspath(cfg.work_dir or fio.cwd())
+    local _, name
+    for _, name in ipairs(fixups) do
+        local dir = cfg[name]
+        if dir and string.sub(dir, 1, 1) ~= '/' then
+                cfg[name] = fio.pathjoin2(work_dir, dir)
+        end
+    end
+    if cfg.listen then
+        cfg.listen = abspath_url(cfg.listen, work_dir)
+    end
+    if cfg.replication_source then
+        cfg.replication_source = abspath_replication_source(
+            cfg.replication_source, work_dir)
+    end
+    if cfg.logger then
+        cfg.logger = abspath_logger(cfg.logger, work_dir)
+    end
+    if cfg.workdir then
+        cfg.work_dir = work_dir
     end
     -- Restore box members after initial configuration
     for k, v in pairs(box_configured) do
