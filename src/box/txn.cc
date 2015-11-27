@@ -233,6 +233,14 @@ txn_commit(struct txn *txn)
 
 		if (txn->n_rows > 0)
 			signature = txn_write_to_wal(txn);
+		if (!stailq_empty(&txn->stmts)) {
+			struct txn_stmt *stmt =
+				stailq_first_entry(&txn->stmts,
+						   struct txn_stmt, next);
+			if (stmt->row && stmt->row->server_id == 0)
+				signature = stmt->row->lsn;
+		}
+
 		/*
 		 * The transaction is in the binary log. No action below
 		 * may throw. In case an error has happened, there is

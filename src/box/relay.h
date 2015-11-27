@@ -45,6 +45,9 @@ struct relay {
 	uint64_t sync;
 	struct recovery *r;
 	ev_tstamp wal_dir_rescan_delay;
+	/* Special flag for join, means that in sending rows server_id will
+	 * be overwritten with 0 */
+	bool hide_row_server_id;
 };
 
 /**

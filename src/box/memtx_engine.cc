@@ -425,7 +425,7 @@ memtx_txn_add_undo(struct txn *txn, struct tuple *old_tuple,
  * A short-cut version of replace() used during bulk load
  * from snapshot.
  */
-void
+static void
 memtx_replace_build_next(struct txn * /* txn */, struct space *space,
 			 struct tuple *old_tuple, struct tuple *new_tuple,
 			 enum dup_replace_mode mode)
@@ -450,7 +450,7 @@ memtx_replace_build_next(struct txn * /* txn */, struct space *space,
  * A short-cut version of replace() used when loading
  * data from XLOG files.
  */
-void
+static void
 memtx_replace_primary_key(struct txn *txn, struct space *space,
 			  struct tuple *old_tuple, struct tuple *new_tuple,
 			  enum dup_replace_mode mode)
@@ -522,7 +522,7 @@ memtx_end_build_primary_key(struct space *space, void *param)
  * Data dictionary spaces are an exception, they are fully
  * built right from the start.
  */
-void
+static void
 memtx_build_secondary_keys(struct space *space, void *param)
 {
 	struct MemtxSpace *handler = (struct MemtxSpace *) space->handler;
@@ -564,7 +564,7 @@ MemtxEngine::MemtxEngine()
  * @pre there is an existing snapshot. Otherwise
  * recovery_bootstrap() should be used instead.
  */
-void
+static void
 recover_snap(struct recovery *r)
 {
 	/* There's no current_wal during initial recover. */
@@ -593,7 +593,7 @@ recover_snap(struct recovery *r)
 	vclock_add_server(&r->vclock, 0);
 
 	say_info("recovering from `%s'", snap->filename);
-	recover_xlog(r, snap);
+	recover_xlog(r, snap, -1);
 }
 
 /** Called at start to tell memtx to recover to a given LSN. */
@@ -914,6 +914,11 @@ MemtxEngine::beginJoin()
 	m_state = MEMTX_OK;
 }
 
+void
+MemtxEngine::endJoin()
+{
+}
+
 static void
 checkpoint_write_row(struct xlog *l, struct xrow_header *row,
 		     uint64_t snap_io_rate_limit)
@@ -1204,10 +1209,16 @@ MemtxEngine::abortCheckpoint()
 	m_checkpoint = 0;
 }
 
-void
+int64_t
 MemtxEngine::join(struct relay *relay)
 {
 	recover_snap(relay->r);
+	/* Replace server vclock using the data from snapshot */
+	vclock_copy(&relay->r->vclock,
+		    vclockset_last(&relay->r->snap_dir.index));
+	printf("MemtxEngine::join: checkpoint %d\n",
+	       (int)relay->r->vclock.signature);
+	return relay->r->vclock.signature;
 }
 
 /**

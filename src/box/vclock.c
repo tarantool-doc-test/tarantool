@@ -40,7 +40,7 @@ vclock_follow(struct vclock *vclock, uint32_t server_id, int64_t lsn)
 	assert(lsn >= 0);
 	assert(server_id < VCLOCK_MAX);
 	int64_t prev_lsn = vclock->lsn[server_id];
-	if (lsn <= prev_lsn) {
+	if (server_id != 0 && lsn <= prev_lsn) {
 		/* Never confirm LSN out of order. */
 		panic("LSN for %u is used twice or COMMIT order is broken: "
 		      "confirmed: %lld, new: %lld",

@@ -39,55 +39,50 @@
 #include "space.h"
 #include "txn.h"
 #include "cfg.h"
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sophia.h>
 #include <stdio.h>
 #include <inttypes.h>
 
-void*
+void *
 sophia_tuple_new(void *obj, struct key_def *key_def,
                  struct tuple_format *format,
                  uint32_t *bsize)
 {
-	int valuesize = 0;
-	char *value = (char *)sp_getstring(obj, "value", &valuesize);
-	char *valueend = value + valuesize;
+	int value_size = 0;
+	char *value = (char *)sp_getstring(obj, "value", &value_size);
+	char *value_end = value + value_size;
 
-	assert(key_def->part_count <= 8);
 	struct {
 		const char *part;
 		int size;
 	} parts[8];
+	assert(key_def->part_count <= lengthof(parts));
 
 	/* prepare keys */
 	int size = 0;
-	int i = 0;
-	while (i < key_def->part_count) {
-		char partname[32];
-		int len = snprintf(partname, sizeof(partname), "key");
+	char partname[32] = "key";
+	int len = 3;
+	assert(len == strlen(partname));
+	for (uint32_t i = 0; i < key_def->part_count; i++) {
 		if (i > 0)
-			 snprintf(partname + len, sizeof(partname) - len, "_%d", i);
+			 sprintf(partname + len, "_%u", i);
 		parts[i].part = (const char *)sp_getstring(obj, partname, &parts[i].size);
 		assert(parts[i].part != NULL);
-		if (key_def->parts[i].type == STRING) {
+		if (key_def->parts[i].type == STRING)
 			size += mp_sizeof_str(parts[i].size);
-		} else {
+		else
 			size += mp_sizeof_uint(*(uint64_t *)parts[i].part);
-		}
-		i++;
 	}
-	int count = key_def->part_count;
+	uint32_t field_count = key_def->part_count;
 	char *p = value;
-	while (p < valueend) {
-		count++;
+	while (p < value_end) {
+		field_count++;
 		mp_next((const char **)&p);
 	}
-	size += mp_sizeof_array(count);
-	size += valuesize;
-	if (bsize) {
+	size += mp_sizeof_array(field_count);
+	size += value_size;
+	if (bsize)
 		*bsize = size;
-	}
 
 	/* build tuple */
 	struct tuple *tuple;
@@ -101,14 +96,14 @@ sophia_tuple_new(void *obj, struct key_def *key_def,
 			tnt_raise(ClientError, ER_MEMORY_ISSUE, size, "tuple");
 		p = raw;
 	}
-	p = mp_encode_array(p, count);
-	for (i = 0; i < key_def->part_count; i++) {
+	p = mp_encode_array(p, field_count);
+	for (uint32_t i = 0; i < key_def->part_count; i++) {
 		if (key_def->parts[i].type == STRING)
 			p = mp_encode_str(p, parts[i].part, parts[i].size);
 		else
 			p = mp_encode_uint(p, *(uint64_t *)parts[i].part);
 	}
-	memcpy(p, value, valuesize);
+	memcpy(p, value, value_size);
 	if (format) {
 		try {
 			tuple_init_field_map(format, tuple, (uint32_t *)tuple);
@@ -121,13 +116,12 @@ sophia_tuple_new(void *obj, struct key_def *key_def,
 	return raw;
 }
 
-static uint64_t num_parts[8];
-
-void*
-SophiaIndex::createObject(const char *key, bool async, const char **keyend)
+void *
+SophiaIndex::createDocument(const char *key, bool async, const char **key_end)
 {
-	assert(key_def->part_count <= 8);
-	void *obj = sp_object(db);
+	static uint64_t num_parts[8];
+	assert(key_def->part_count <= lengthof(num_parts));
+	void *obj = sp_document(db);
 	if (obj == NULL)
 		sophia_error(env);
 	if (async)
@@ -135,37 +129,42 @@ SophiaIndex::createObject(const char *key, bool async, const char **keyend)
 	sp_setstring(obj, "arg", fiber(), 0);
 	if (key == NULL)
 		return obj;
-	int i = 0;
-	while (i < key_def->part_count) {
-		char partname[32];
-		int len = snprintf(partname, sizeof(partname), "key");
+	char part_name[16] = "key";
+	int len = 3;
+	assert(len == strlen(part_name));
+	for (uint32_t i = 0; i < key_def->part_count; i++) {
 		if (i > 0)
-			 snprintf(partname + len, sizeof(partname) - len, "_%d", i);
+			 sprintf(part_name + len, "_%u", i);
 		const char *part;
-		uint32_t partsize;
+		uint32_t part_size;
 		if (key_def->parts[i].type == STRING) {
-			part = mp_decode_str(&key, &partsize);
+			part = mp_decode_str(&key, &part_size);
+			if (part_size == 0) {
+				/*
+				 * Passing part_size = 0 to sp_setstring has
+				 *  special meaning - actual length is
+				 *  calculated by strlen(part).
+				 * Thus we need to pass a zero-length string.
+				 */
+				part = "";
+			}
 		} else {
 			num_parts[i] = mp_decode_uint(&key);
 			part = (char *)&num_parts[i];
-			partsize = sizeof(uint64_t);
+			part_size = sizeof(num_parts[i]);
 		}
-		if (partsize == 0)
-			part = "";
-		if (sp_setstring(obj, partname, part, partsize) == -1)
+		if (sp_setstring(obj, part_name, part, part_size) == -1)
 			sophia_error(env);
-		i++;
 	}
-	if (keyend) {
-		*keyend = key;
-	}
+	if (key_end)
+		*key_end = key;
 	return obj;
 }
 
 static int
 sophia_update(int, char*, int, int, char*, int, void*, void**, int*);
 
-static inline void*
+static inline void *
 sophia_configure(struct space *space, struct key_def *key_def)
 {
 	SophiaEngine *engine =
@@ -173,54 +172,55 @@ sophia_configure(struct space *space, struct key_def *key_def)
 	void *env = engine->env;
 	/* create database */
 	char path[128];
-	snprintf(path, sizeof(path), "%" PRIu32, key_def->space_id);
+	sprintf(path, "%" PRIu32, key_def->space_id);
 	sp_setstring(env, "db", path, 0);
 	/* db.id */
-	snprintf(path, sizeof(path), "db.%" PRIu32 ".id",
-	         key_def->space_id);
+	sprintf(path, "db.%" PRIu32 ".id", key_def->space_id);
 	sp_setint(env, path, key_def->space_id);
 	/* apply space schema */
-	int i = 0;
-	while (i < key_def->part_count)
+	char part[16];
+	int len = 3;
+	memcpy(part, "key", len + 1);
+	assert(len == strlen(part));
+	for (uint32_t i = 0; i < key_def->part_count; i++)
 	{
-		char *type;
+		const char *type;
 		if (key_def->parts[i].type == NUM)
-			type = (char *)"u64";
+			type = "u64";
 		else
-			type = (char *)"string";
-		char part[32];
-		if (i == 0) {
-			snprintf(part, sizeof(part), "key");
-		} else {
+			type = "string";
+		if (i > 0) {
 			/* create key-part */
-			snprintf(path, sizeof(path), "db.%" PRIu32 ".index",
+			sprintf(part + len, "_%" PRIu32, i);
+			sprintf(path, "db.%" PRIu32 ".index",
 			         key_def->space_id);
-			snprintf(part, sizeof(part), "key_%d", i);
 			sp_setstring(env, path, part, 0);
 		}
 		/* set key-part type */
-		snprintf(path, sizeof(path), "db.%" PRIu32 ".index.%s",
-		         key_def->space_id, part);
+		sprintf(path, "db.%" PRIu32 ".index.%s",
+			key_def->space_id, part);
 		sp_setstring(env, path, type, 0);
-		i++;
 	}
 	/* db.update */
-	snprintf(path, sizeof(path), "db.%" PRIu32 ".index.update", key_def->space_id);
+	sprintf(path, "db.%" PRIu32 ".index.update", key_def->space_id);
 	sp_setstring(env, path, (const void *)(uintptr_t)sophia_update, 0);
 	/* db.update_arg */
-	snprintf(path, sizeof(path), "db.%" PRIu32 ".index.update_arg", key_def->space_id);
+	sprintf(path, "db.%" PRIu32 ".index.update_arg", key_def->space_id);
 	sp_setstring(env, path, (const void *)key_def, 0);
 	/* db.compression */
-	snprintf(path, sizeof(path), "db.%" PRIu32 ".compression", key_def->space_id);
+	sprintf(path, "db.%" PRIu32 ".compression", key_def->space_id);
+	sp_setstring(env, path, cfg_gets("sophia.compression"), 0);
+	/* db.compression_branch */
+	sprintf(path, "db.%" PRIu32 ".compression_branch", key_def->space_id);
 	sp_setstring(env, path, cfg_gets("sophia.compression"), 0);
 	/* db.compression_key */
-	snprintf(path, sizeof(path), "db.%" PRIu32 ".compression_key", key_def->space_id);
+	sprintf(path, "db.%" PRIu32 ".compression_key", key_def->space_id);
 	sp_setint(env, path, cfg_geti("sophia.compression_key"));
 	/* db.path_fail_on_drop */
-	snprintf(path, sizeof(path), "db.%" PRIu32 ".path_fail_on_drop", key_def->space_id);
+	sprintf(path, "db.%" PRIu32 ".path_fail_on_drop", key_def->space_id);
 	sp_setint(env, path, 0);
 	/* db */
-	snprintf(path, sizeof(path), "db.%" PRIu32, key_def->space_id);
+	sprintf(path, "db.%" PRIu32, key_def->space_id);
 	void *db = sp_getobject(env, path);
 	if (db == NULL)
 		sophia_error(env);
@@ -280,10 +280,11 @@ SophiaIndex::bsize() const
 }
 
 struct tuple *
-SophiaIndex::findByKey(const char *key, uint32_t part_count = 0) const
+SophiaIndex::findByKey(const char *key, uint32_t part_count) const
 {
 	(void)part_count;
-	void *obj = ((SophiaIndex *)this)->createObject(key, true, NULL);
+	assert(part_count == key_def->part_count);
+	void *obj = ((SophiaIndex *)this)->createDocument(key, true, NULL);
 	void *transaction = db;
 	/* engine_tx might be empty, even if we are in txn context.
 	 *
@@ -337,11 +338,8 @@ sophia_mempool_init(sophia_mempool *p)
 static inline void
 sophia_mempool_free(sophia_mempool *p)
 {
-	int i = 0;
-	while (i < p->count) {
+	for (int i = 0; i < p->count; i++)
 		free(p->chunks[i]);
-		i++;
-	}
 }
 
 static void *
@@ -349,7 +347,7 @@ sophia_update_alloc(void *arg, size_t size)
 {
 	/* simulate region allocator for use with
 	 * tuple_upsert_execute() */
-	struct sophia_mempool *p = (struct sophia_mempool*)arg;
+	struct sophia_mempool *p = (struct sophia_mempool *)arg;
 	assert(p->count < 128);
 	void *ptr = malloc(size);
 	p->chunks[p->count++] = ptr;
@@ -361,7 +359,7 @@ struct sophiaref {
 	uint16_t size;
 } __attribute__((packed));
 
-static inline char*
+static inline char *
 sophia_upsert_to_tarantool(struct key_def *key_def, char *origin, int origin_size,
                            uint32_t *origin_keysize,
                            uint32_t *size)
@@ -570,7 +568,7 @@ SophiaIndex::upsert(const char *key,
 	p += tuple_size;
 	memcpy(p, expr, expr_size);
 	void *transaction = in_txn()->engine_tx;
-	void *obj = createObject(key, false, NULL);
+	void *obj = createDocument(key, false, NULL);
 	sp_setstring(obj, "value", value, valuesize);
 	int rc = sp_update(transaction, obj);
 	free(value);
@@ -587,7 +585,7 @@ SophiaIndex::replace_or_insert(const char *tuple,
 	const char *key = tuple_field_raw(tuple, size, key_def->parts[0].fieldno);
 	/* insert: ensure key does not exists */
 	if (mode == DUP_INSERT) {
-		struct tuple *found = findByKey(key);
+		struct tuple *found = findByKey(key, key_def->part_count);
 		if (found) {
 			tuple_delete(found);
 			struct space *sp = space_cache_find(key_def->space_id);
@@ -600,7 +598,7 @@ SophiaIndex::replace_or_insert(const char *tuple,
 	void *transaction = in_txn()->engine_tx;
 	const char *value;
 	size_t valuesize;
-	void *obj = createObject(key, false, &value);
+	void *obj = createDocument(key, false, &value);
 	valuesize = size - (value - tuple);
 	if (valuesize > 0)
 		sp_setstring(obj, "value", value, valuesize);
@@ -613,7 +611,7 @@ SophiaIndex::replace_or_insert(const char *tuple,
 void
 SophiaIndex::remove(const char *key)
 {
-	void *obj = createObject(key, false, NULL);
+	void *obj = createDocument(key, false, NULL);
 	void *transaction = in_txn()->engine_tx;
 	int rc = sp_delete(transaction, obj);
 	if (rc == -1)
@@ -715,7 +713,7 @@ sophia_iterator_eq(struct iterator *ptr)
 	struct sophia_iterator *it = (struct sophia_iterator *) ptr;
 	assert(it->cursor == NULL);
 	SophiaIndex *index = (SophiaIndex *)index_find(it->space, 0);
-	return index->findByKey(it->key);
+	return index->findByKey(it->key, index->key_def->part_count);
 }
 
 struct iterator *
@@ -762,13 +760,17 @@ SophiaIndex::initIterator(struct iterator *ptr,
 		it->base.next = sophia_iterator_eq;
 		return;
 	case ITER_ALL:
-	case ITER_GE: compare = ">=";
+	case ITER_GE:
+		compare = ">=";
 		break;
-	case ITER_GT: compare = ">";
+	case ITER_GT:
+		compare = ">";
 		break;
-	case ITER_LE: compare = "<=";
+	case ITER_LE:
+		compare = "<=";
 		break;
-	case ITER_LT: compare = "<";
+	case ITER_LT:
+		compare = "<";
 		break;
 	default:
 		tnt_raise(ClientError, ER_UNSUPPORTED,
@@ -778,7 +780,7 @@ SophiaIndex::initIterator(struct iterator *ptr,
 	it->cursor = sp_cursor(env);
 	if (it->cursor == NULL)
 		sophia_error(env);
-	void *obj = ((SophiaIndex *)this)->createObject(key, true, &it->keyend);
+	void *obj = ((SophiaIndex *)this)->createDocument(key, true, &it->keyend);
 	sp_setstring(obj, "order", compare, 0);
 	/* Position first key here, since key pointer might be
 	 * unavailable from lua.

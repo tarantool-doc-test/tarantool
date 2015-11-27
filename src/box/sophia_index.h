@@ -71,7 +71,7 @@ public:
 	void *db;
 
 private:
-	void *createObject(const char *key, bool async, const char **keyend);
+	void *createDocument(const char *key, bool async, const char **keyend);
 	struct tuple_format *format;
 };
 

@@ -46,7 +46,7 @@
 #include "trigger.h"
 #include "errinj.h"
 
-void
+static void
 relay_send_row(struct recovery *r, void *param, struct xrow_header *packet);
 
 static inline void
@@ -81,7 +81,7 @@ relay_set_cord_name(int fd)
 	cord_set_name(name);
 }
 
-void
+static void
 relay_join_f(va_list ap)
 {
 	struct relay *relay = va_arg(ap, struct relay *);
@@ -89,9 +89,21 @@ relay_join_f(va_list ap)
 	relay_set_cord_name(relay->io.fd);
 
 	/* Send snapshot */
-	engine_join(relay);
-
+	int64_t checkpoint = engine_join(relay);
 	say_info("snapshot sent");
+
+	/* Catch up to checkpoint */
+	relay->hide_row_server_id  = true;
+	auto guard = make_scoped_guard([relay] {
+		if (relay->r->current_wal) {
+			xlog_close(relay->r->current_wal);
+			relay->r->current_wal = NULL;
+		}
+		relay->hide_row_server_id = false;
+	});
+	recover_remaining_wals(relay->r, checkpoint);
+	assert(relay->r->vclock.signature == checkpoint);
+	say_info("checkpoint was synchronized");
 }
 
 void
@@ -125,7 +137,7 @@ relay_join(int fd, struct xrow_header *packet,
 	 * end of the stream of snapshot rows.
 	 */
 	struct xrow_header row;
-	xrow_encode_vclock(&row, vclockset_last(&r->snap_dir.index));
+	xrow_encode_vclock(&row, &r->vclock);
 	/*
 	 * Identify the message with the server id of this
 	 * server, this is the only way for a replica to find
@@ -262,13 +274,25 @@ void
 relay_send(struct relay *relay, struct xrow_header *packet)
 {
 	packet->sync = relay->sync;
+	uint32_t save_server_id = 0;
+	uint64_t save_lsn = 0;
+	if (relay->hide_row_server_id) {
+		save_server_id = packet->server_id;
+		packet->server_id = 0;
+		save_lsn = packet->lsn;
+		packet->lsn = relay->r->vclock.signature;
+	}
 	struct iovec iov[XROW_IOVMAX];
 	int iovcnt = xrow_to_iovec(packet, iov);
 	coio_writev(&relay->io, iov, iovcnt, 0);
+	if (relay->hide_row_server_id) {
+		packet->server_id = save_server_id;
+		packet->lsn = save_lsn;
+	}
 }
 
 /** Send a single row to the client. */
-void
+static void
 relay_send_row(struct recovery *r, void *param, struct xrow_header *packet)
 {
 	struct relay *relay = (struct relay *) param;

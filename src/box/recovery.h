@@ -111,7 +111,7 @@ void
 recovery_bootstrap(struct recovery *r);
 
 void
-recover_xlog(struct recovery *r, struct xlog *l);
+recover_xlog(struct recovery *r, struct xlog *l, int64_t to_checkpoint);
 
 void
 recovery_follow_local(struct recovery *r, const char *name,
@@ -136,6 +136,19 @@ recovery_apply_row(struct recovery *r, struct xrow_header *packet);
  */
 int64_t
 recovery_last_checkpoint(struct recovery *r);
+
+/**
+ * Find out if there are new .xlog files since the current
+ * LSN, and read them all up.
+ *
+ * if to_checkpoint >= 0, reading will be stopped on reaching recovery
+ * vclock signature > to_checkpoint (after playing to_checkpoint record)
+ *
+ * This function will not close r->current_wal if
+ * recovery was successful.
+ */
+void
+recover_remaining_wals(struct recovery *r, int64_t to_checkpoint);
 
 /**
  * Ensure we don't corrupt the current WAL file in the child.

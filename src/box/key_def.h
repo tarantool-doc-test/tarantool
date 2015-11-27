@@ -297,7 +297,7 @@ typedef int (*box_function_f)(box_function_ctx_t *ctx,
 /** Initialize a pre-allocated key_def. */
 struct key_def *
 key_def_new(uint32_t space_id, uint32_t iid, const char *name,
-	    enum index_type type, struct key_opts *opts,
+	    enum index_type type, const struct key_opts *opts,
 	    uint32_t part_count);
 
 static inline struct key_def *

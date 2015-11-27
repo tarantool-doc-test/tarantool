@@ -72,7 +72,7 @@ schema_object_type(const char *name)
 
 struct key_def *
 key_def_new(uint32_t space_id, uint32_t iid, const char *name,
-	    enum index_type type, struct key_opts *opts,
+	    enum index_type type, const struct key_opts *opts,
 	    uint32_t part_count)
 {
 	uint32_t parts_size = sizeof(struct key_part) * part_count;

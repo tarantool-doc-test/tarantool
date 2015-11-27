@@ -31,6 +31,7 @@
  * SUCH DAMAGE.
  */
 #include "index.h"
+#include <stdint.h>
 
 struct request;
 struct space;
@@ -97,7 +98,7 @@ public:
 	 */
 	virtual bool needToBuildSecondaryKey(struct space *space);
 
-	virtual void join(struct relay *);
+	virtual int64_t join(struct relay *);
 	/**
 	 * Begin a new single or multi-statement transaction.
 	 * Called on first statement in a transaction, not when
@@ -142,6 +143,10 @@ public:
 	 * Notify engine about a JOIN start (slave-side)
 	 */
 	virtual void beginJoin();
+	/**
+	 * Notify engine about a JOIN end (slave-side)
+	 */
+	virtual void endJoin();
 	/**
 	 * Begin a two-phase snapshot creation in this
 	 * engine (snapshot is a memtx idea of a checkpoint).
@@ -244,6 +249,12 @@ void
 engine_begin_join();
 
 /**
+ * Called at the end of JOIN routine.
+ */
+void
+engine_end_join();
+
+/**
  * Called at the end of recovery.
  * Build secondary keys in all spaces.
  */
@@ -259,7 +270,7 @@ engine_checkpoint(int64_t checkpoint_id);
 /**
  * Send a snapshot.
  */
-void
+int64_t
 engine_join(struct relay *);
 
 #endif /* TARANTOOL_BOX_ENGINE_H_INCLUDED */
