@@ -461,6 +461,18 @@ void
 cbus_notify(struct cpipe *pipe);
 
 /**
+ * A helper method to invoke a function on the other side of the
+ * bus.
+ *
+ * Creates the relevant messages, pushes them to the stack and
+ * blocks the caller until f is executed in the correspondent bus.
+ * Detects which cord to invoke a function in based on the current
+ * cord value (i.e. finds the respective pipes automatically).
+ */
+void
+cbus_invoke(struct cbus *bus, fiber_func f, ...);
+
+/**
  * A pool of worker fibers to handle messages,
  * so that each message is handled in its own fiber.
  */

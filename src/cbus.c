@@ -272,11 +272,25 @@ cpipe_fiber_pool_needs_throttling(struct cpipe_fiber_pool *pool)
 	return pool->size > pool->max_size;
 }
 
+#if 0
+struct cbus_invoke_msg {
+	va_list ap;
+	cmsg_notify_msg notify;
+};
+
+void
+cbus_invoke(struct cbus *bus, fiber_func f, ...)
+{
+	struct 
+}
+
+#endif
+
 /**
  * Main function of the fiber invoked to handle all outstanding
  * tasks in a queue.
  */
-static void
+static int
 cpipe_fiber_pool_f(va_list ap)
 {
 	struct cpipe_fiber_pool *pool = va_arg(ap, struct cpipe_fiber_pool *);
@@ -299,6 +313,7 @@ restart:
 			goto restart;
 	}
 	pool->size--;
+	return 0;
 }
 
 
