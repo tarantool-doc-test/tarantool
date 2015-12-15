@@ -457,6 +457,9 @@ struct cmsg_notify
 void
 cmsg_notify_init(struct cmsg_notify *msg);
 
+void
+cbus_notify(struct cpipe *pipe);
+
 /**
  * A pool of worker fibers to handle messages,
  * so that each message is handled in its own fiber.
