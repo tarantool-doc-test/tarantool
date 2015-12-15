@@ -468,8 +468,13 @@ cbus_notify(struct cpipe *pipe);
  * blocks the caller until f is executed in the correspondent bus.
  * Detects which cord to invoke a function in based on the current
  * cord value (i.e. finds the respective pipes automatically).
- */
-void
+ *
+ * @return This function itself never fails. It returns the return
+ * value of the argument. If the argument function set an error in
+ * the called cord, this error is safely transferred to the caller
+ * cord's diagnostics area.
+*/
+int
 cbus_invoke(struct cbus *bus, fiber_func f, ...);
 
 /**

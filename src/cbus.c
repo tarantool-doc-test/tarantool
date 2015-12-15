@@ -264,6 +264,79 @@ cmsg_notify_init(struct cmsg_notify *msg)
 	msg->fiber = fiber();
 }
 
+/**
+ * The state of a synchronous cross-thread call.
+ */
+ struct cbus_invoke_msg {
+	struct cmsg_notify base;
+	/**
+	 * If invoked function returned a non-zero value, the
+	 * diagnostics area is saved and returned to the caller.
+	 */
+	struct diag diag;
+
+	struct cmsg_hop route[2];
+	/** Where to deliver this message to. */
+	struct cpipe *peer;
+	/** What to invoke. */
+	fiber_func f;
+	/** Invoked function return code. */
+	int rc;
+	/** Invoked function arguments. */
+	va_list ap;
+};
+
+static void
+cbus_invoke_impl(struct cmsg *ptr)
+{
+	struct cbus_invoke_msg *msg = (struct cbus_invoke_msg *) ptr;
+
+	msg->rc = msg->f(msg->ap);
+	if (msg->rc)
+		diag_move(&fiber()->diag, &msg->diag);
+}
+
+void
+cbus_invoke_msg_init(struct cbus_invoke_msg *msg, struct cbus *bus,
+		     fiber_func f)
+{
+	cmsg_notify_init(&msg->base);
+	diag_create(&msg->diag);
+
+	int peer_idx = bus->pipe[0]->consumer == cord()->loop;
+	int pipe_idx = !peer_idx;
+
+	msg->peer = bus->pipe[peer_idx];
+	msg->rc = 0;
+	msg->f = f;
+
+	msg->route[0].f = cbus_invoke_impl;
+	msg->route[0].pipe = bus->pipe[pipe_idx];
+	msg->route[1].f = cmsg_notify_deliver;
+	msg->route[1].pipe = NULL;
+	/*
+	 * Reset the route in the base message to account for
+	 * round-trip.
+	 */
+	cmsg_init(&msg->base.base, msg->route);
+}
+
+int
+cbus_invoke(struct cbus *bus, fiber_func f, ...)
+{
+	struct cbus_invoke_msg msg;
+
+	cbus_invoke_msg_init(&msg, bus, f);
+	va_start(msg.ap, f);
+
+	cpipe_push(msg.peer, (struct cmsg *) &msg);
+	fiber_yield();
+
+	if (! diag_is_empty(&msg.diag))
+		diag_move(&msg.diag, &fiber()->diag);
+
+	return msg.rc;
+}
 
 /** Return true if there are too many active workers in the pool. */
 static inline bool
@@ -271,20 +344,6 @@ cpipe_fiber_pool_needs_throttling(struct cpipe_fiber_pool *pool)
 {
 	return pool->size > pool->max_size;
 }
-
-#if 0
-struct cbus_invoke_msg {
-	va_list ap;
-	cmsg_notify_msg notify;
-};
-
-void
-cbus_invoke(struct cbus *bus, fiber_func f, ...)
-{
-	struct 
-}
-
-#endif
 
 /**
  * Main function of the fiber invoked to handle all outstanding

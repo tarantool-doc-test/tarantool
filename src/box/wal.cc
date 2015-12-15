@@ -83,6 +83,7 @@ struct wal_writer
 	struct xdir wal_dir;
 	/** The current WAL file. */
 	struct xlog *current_wal;
+	struct fiber *main_f;
 };
 
 static struct wal_writer wal_writer_singleton;
@@ -191,19 +192,24 @@ wal_writer_start(enum wal_mode wal_mode, const char *wal_dirname,
 	cbus_join(&writer->tx_wal_bus, &writer->tx_pipe);
 }
 
+static int
+wal_writer_stop_f(va_list ap)
+{
+	struct wal_writer *writer = va_arg(ap, struct wal_writer *);
+	fiber_cancel(writer->main_f);
+	return 0;
+}
+
 /** Stop and destroy the writer thread (at shutdown). */
 void
 wal_writer_stop()
 {
-#if 0
 	struct wal_writer *writer = wal;
 
 	/* Stop the worker thread. */
 
-	cbus_lock(&writer->tx_wal_bus);
-	writer->is_shutdown= true;
-	cbus_unlock(&writer->tx_wal_bus);
-	cbus_signal(&writer->tx_wal_bus);
+	cbus_invoke(&writer->tx_wal_bus, wal_writer_stop_f, writer);
+
 	if (cord_join(&writer->cord)) {
 		/* We can't recover from this in any reasonable way. */
 		panic_syserror("WAL writer: thread join failed");
@@ -211,7 +217,6 @@ wal_writer_stop()
 
 	cbus_leave(&writer->tx_wal_bus);
 	wal_writer_destroy(writer);
-#endif
 
 	wal = NULL;
 }
@@ -408,6 +413,7 @@ wal_writer_f(va_list ap)
 {
 	struct wal_writer *writer = va_arg(ap, struct wal_writer *);
 
+	writer->main_f = fiber();
 	cbus_join(&writer->tx_wal_bus, &writer->wal_pipe);
 
 	fiber_yield();
