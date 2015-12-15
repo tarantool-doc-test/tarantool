@@ -782,11 +782,6 @@ local remote_methods = {
                 enabled         = true,
                 index           = {}
             }
-            if #space > 5 and string.match(space[6], 'temporary') then
-                s.temporary = true
-            else
-                s.temporary = false
-            end
 
             setmetatable(s, space_metatable(self))
 
