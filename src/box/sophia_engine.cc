@@ -171,7 +171,7 @@ SophiaSpace::executeUpdate(struct txn *txn, struct space *space,
 	/* Do tuple update */
 	struct tuple *new_tuple =
 		tuple_update(space->format,
-		             region_alloc_ex_cb,
+		             region_aligned_alloc_xc_cb,
 		             &fiber()->gc,
 		             old_tuple, request->tuple,
 		             request->tuple_end,
@@ -466,8 +466,9 @@ SophiaEngine::dropIndex(Index *index)
 	rc = sp_destroy(i->db);
 	if (rc == -1)
 		sophia_error(env);
-	/* automatically start asynchronous database drop
-	 * when a last transaction completes */
+	/* maybe start asynchronous database
+	 * shutdown: last snapshot might hold a
+	 * db pointer. */
 	rc = sp_destroy(i->db);
 	if (rc == -1)
 		sophia_error(env);

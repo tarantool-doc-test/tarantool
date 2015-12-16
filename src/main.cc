@@ -71,6 +71,7 @@
 #include <readline/history.h>
 #include "title.h"
 #include <libutil.h>
+#include "box/lua/init.h" /* box_lua_init() */
 
 static pid_t master_pid = getpid();
 static struct pidfh *pid_file_handle;
@@ -279,6 +280,7 @@ signal_init(void)
 static void
 daemonize()
 {
+	pid_t pid;
 	int fd;
 
 	/* flush buffers to avoid multiple output */
@@ -286,12 +288,15 @@ daemonize()
 	fflush(stdin);
 	fflush(stdout);
 	fflush(stderr);
-	switch (fork()) {
+	pid = fork();
+	switch (pid) {
 	case -1:
 		goto error;
 	case 0:                                     /* child */
+		master_pid = getpid();
 		break;
 	default:                                    /* parent */
+		master_pid = pid;
 		exit(EXIT_SUCCESS);
 	}
 
@@ -435,10 +440,8 @@ load_cfg()
 			cfg_geti("logger_nonblock"),
 			background);
 
-	if (background) {
+	if (background)
 		daemonize();
-		master_pid = getpid();
-	}
 
 	/*
 	 * after (optional) daemonising to avoid confusing messages with
@@ -628,6 +631,7 @@ main(int argc, char **argv)
 	coeio_init();
 	signal_init();
 	tarantool_lua_init(tarantool_bin, main_argc, main_argv);
+	box_lua_init(tarantool_L);
 
 	/* main core cleanup routine */
 	atexit(tarantool_free);

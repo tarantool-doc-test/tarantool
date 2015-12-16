@@ -1,3 +1,9 @@
+    :confval:`slab_alloc_arena`, |br|
+    :confval:`slab_alloc_minimal`, |br|
+    :confval:`slab_alloc_maximal`, |br|
+    :confval:`slab_alloc_factor`, |br|
+    :confval:`sophia` |br|
+
 .. confval:: slab_alloc_arena
 
     How much memory Tarantool allocates to actually store tuples, in gigabytes.
@@ -44,12 +50,15 @@
 
     The default sophia configuration can be changed with
 
-        | :code:`sophia = {`
-        | |nbsp| :samp:`page_size = {number},`
-        | |nbsp| :samp:`threads = {number},`
-        | |nbsp| :samp:`node_size = {number},`
-        | |nbsp| :samp:`memory_limit = {number}`
-        | :code:`}`
+    .. cssclass:: highlight
+    .. parsed-literal::
+
+        sophia = {
+          page_size = *number*,
+          threads = *number*,
+          node_size = *number*,
+          memory_limit = *number*,
+        }`
 
     This method may change in the future.
 

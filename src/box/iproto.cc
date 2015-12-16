@@ -49,10 +49,8 @@
 #include "xrow.h"
 #include "recovery.h" /* server_uuid */
 #include "iproto_constants.h"
-#include "user_def.h"
 #include "authentication.h"
 #include "rmean.h"
-#include "lua/call.h"
 
 /* {{{ iproto_msg - declaration */
 
@@ -143,6 +141,17 @@ static struct cbus net_tx_bus;
 /* A pointer to the transaction processor cord. */
 struct cord *tx_cord;
 
+struct rmean *rmean_net;
+struct rmean *rmean_net_tx_bus;
+
+enum rmean_net_name {
+	IPROTO_SENT,
+	IPROTO_RECEIVED,
+	IPROTO_LAST,
+};
+
+const char *rmean_net_strings[IPROTO_LAST] = { "SENT", "RECEIVED" };
+
 /** Context of a single client connection. */
 struct iproto_connection
 {
@@ -170,7 +179,6 @@ struct iproto_connection
 	struct ev_io output;
 	/** Logical session. */
 	struct session *session;
-	uint64_t cookie;
 	ev_loop *loop;
 	/* Pre-allocated disconnect msg. */
 	struct iproto_msg *disconnect;
@@ -281,7 +289,7 @@ static struct cmsg_hop request_route[] = {
 };
 
 static struct iproto_connection *
-iproto_connection_new(const char *name, int fd, struct sockaddr *addr)
+iproto_connection_new(const char *name, int fd)
 {
 	(void) name;
 	struct iproto_connection *con = (struct iproto_connection *)
@@ -294,7 +302,6 @@ iproto_connection_new(const char *name, int fd, struct sockaddr *addr)
 	con->iobuf[1] = iobuf_new_mt(&tx_cord->slabc);
 	con->parse_size = 0;
 	con->session = NULL;
-	con->cookie = *(uint64_t *) addr;
 	/* It may be very awkward to allocate at close. */
 	con->disconnect = iproto_msg_new(con, disconnect_route);
 	return con;
@@ -516,7 +523,7 @@ iproto_connection_on_input(ev_loop *loop, struct ev_io *watcher,
 			return;
 		}
 		/* Count statistics */
-		rmean_collect(rmean_net, RMEAN_NET_RECEIVED, nrd);
+		rmean_collect(rmean_net, IPROTO_RECEIVED, nrd);
 
 		/* Update the read position and connection state. */
 		in->wpos += nrd;
@@ -571,7 +578,7 @@ iproto_flush(struct iobuf *iobuf, struct iproto_connection *con)
 	ssize_t nwr = sio_writev(fd, iov, iovcnt);
 
 	/* Count statistics */
-	rmean_collect(rmean_net, RMEAN_NET_SENT, nwr);
+	rmean_collect(rmean_net, IPROTO_SENT, nwr);
 	if (nwr > 0) {
 		if (begin->used + nwr == end->used) {
 			if (ibuf_used(&iobuf->in) == 0) {
@@ -620,6 +627,8 @@ iproto_connection_on_output(ev_loop *loop, struct ev_io *watcher,
 	}
 }
 
+extern int sc_version;
+
 static void
 tx_process_msg(struct cmsg *m)
 {
@@ -632,6 +641,12 @@ tx_process_msg(struct cmsg *m)
 
 	session->sync = msg->header.sync;
 	try {
+		if (msg->header.schema_id &&
+		    msg->header.schema_id != sc_version) {
+			tnt_raise(ClientError, ER_WRONG_SCHEMA_VERSION,
+				  sc_version, msg->header.schema_id);
+		}
+
 		switch (msg->header.type) {
 		case IPROTO_SELECT:
 		{
@@ -667,9 +682,13 @@ tx_process_msg(struct cmsg *m)
 			struct tuple *tuple;
 			if (box_process1(&msg->request, &tuple) < 0)
 				diag_raise();
-			struct obuf_svp svp = iproto_prepare_select(out);
-			if (tuple)
-				tuple_to_obuf(tuple, out);
+			struct obuf_svp svp;
+			if (iproto_prepare_select(out, &svp) != 0)
+				diag_raise();
+			if (tuple) {
+				if (tuple_to_obuf(tuple, out) != 0)
+					diag_raise();
+			}
 			iproto_reply_select(out, &svp, msg->header.sync,
 					    tuple != 0);
 			break;
@@ -677,12 +696,12 @@ tx_process_msg(struct cmsg *m)
 		case IPROTO_CALL:
 			assert(msg->request.type == msg->header.type);
 			rmean_collect(rmean_box, msg->request.type, 1);
-			box_lua_call(&msg->request, out);
+			box_process_call(&msg->request, out);
 			break;
 		case IPROTO_EVAL:
 			assert(msg->request.type == msg->header.type);
 			rmean_collect(rmean_box, msg->request.type, 1);
-			box_lua_eval(&msg->request, out);
+			box_process_eval(&msg->request, out);
 			break;
 		case IPROTO_AUTH:
 		{
@@ -703,7 +722,7 @@ tx_process_msg(struct cmsg *m)
 			 * lambda in the beginning of the block
 			 * will re-activate the watchers for us.
 			 */
-			box_process_join(con->input.fd, &msg->header);
+			box_process_join(&con->input, &msg->header);
 			break;
 		case IPROTO_SUBSCRIBE:
 			/*
@@ -712,7 +731,7 @@ tx_process_msg(struct cmsg *m)
 			 * the write watcher will be re-activated
 			 * the same way as for JOIN.
 			 */
-			box_process_subscribe(con->input.fd, &msg->header);
+			box_process_subscribe(&con->input, &msg->header);
 			break;
 		default:
 			tnt_raise(ClientError, ER_UNKNOWN_REQUEST_TYPE,
@@ -760,7 +779,7 @@ tx_process_connect(struct cmsg *m)
 	struct iproto_connection *con = msg->connection;
 	struct obuf *out = &msg->iobuf->out;
 	try {              /* connect. */
-		con->session = session_create(con->input.fd, con->cookie);
+		con->session = session_create(con->input.fd);
 		static __thread char greeting[IPROTO_GREETING_SIZE];
 		/* TODO: dirty read from tx thread */
 		struct tt_uuid uuid = ::recovery->server_uuid;
@@ -792,7 +811,7 @@ net_send_greeting(struct cmsg *m)
 						 obuf_iovcnt(out));
 
 			/* Count statistics */
-			rmean_collect(rmean_net, RMEAN_NET_SENT, nwr);
+			rmean_collect(rmean_net, IPROTO_SENT, nwr);
 		} catch (Exception *e) {
 			e->log();
 		}
@@ -833,7 +852,7 @@ iproto_on_accept(struct evio_service * /* service */, int fd,
 
 	struct iproto_connection *con;
 
-	con = iproto_connection_new(name, fd, addr);
+	con = iproto_connection_new(name, fd);
 	/*
 	 * Ignore msg allocation failure - the queue size is
 	 * fixed so there is a limited number of msgs in
@@ -858,7 +877,6 @@ net_cord_f(va_list /* ap */)
 	iobuf_init();
 	mempool_create(&iproto_msg_pool, &cord()->slabc,
 		       sizeof(struct iproto_msg));
-	cpipe_create(&net_pipe);
 	mempool_create(&iproto_connection_pool, &cord()->slabc,
 		       sizeof(struct iproto_connection));
 
@@ -867,13 +885,12 @@ net_cord_f(va_list /* ap */)
 
 
 	/* Init statistics counter */
-	rmean_net = rmean_new(rmean_net_strings, RMEAN_NET_LAST);
+	rmean_net = rmean_new(rmean_net_strings, IPROTO_LAST);
 
-	if (rmean_net == NULL)
-		tnt_raise(OutOfMemory,
-			  sizeof(*rmean_net) +
-			  RMEAN_NET_LAST * sizeof(stats),
+	if (rmean_net == NULL) {
+		tnt_raise(OutOfMemory, sizeof(struct rmean),
 			  "rmean", "struct rmean");
+	}
 
 
 	cbus_join(&net_tx_bus, &net_pipe);
@@ -886,6 +903,7 @@ net_cord_f(va_list /* ap */)
 	fiber_yield();
 
 	rmean_delete(rmean_net);
+	cbus_leave(&net_tx_bus);
 }
 
 /** Initialize the iproto subsystem and start network io thread */
@@ -895,7 +913,9 @@ iproto_init()
 	tx_cord = cord();
 
 	cbus_create(&net_tx_bus);
+	rmean_net_tx_bus = net_tx_bus.stats;
 	cpipe_create(&tx_pipe);
+	cpipe_create(&net_pipe);
 	static struct cpipe_fiber_pool fiber_pool;
 
 	cpipe_fiber_pool_create(&fiber_pool, "iproto", &tx_pipe,
@@ -905,7 +925,6 @@ iproto_init()
 	static struct cord net_cord;
 	if (cord_costart(&net_cord, "iproto", net_cord_f, NULL))
 		panic("failed to initialize iproto thread");
-
 
 	cbus_join(&net_tx_bus, &tx_pipe);
 }
@@ -962,6 +981,7 @@ iproto_do_set_listen(struct cmsg *m)
 		}
 	} catch (Exception *e) {
 		diag_move(&fiber()->diag, &msg->diag);
+		iproto_on_bind(&msg->wakeup);
 	}
 }
 

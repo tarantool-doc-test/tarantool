@@ -38,6 +38,17 @@ s:nonblock(true)
 
 s:readable(.01)
 s:wait(.01)
+socket.iowait(s:fd(), 'RW')
+socket.iowait(s:fd(), 3)
+socket.iowait(s:fd(), 'R')
+socket.iowait(s:fd(), 'r')
+socket.iowait(s:fd(), 1)
+socket.iowait(s:fd(), 'W')
+socket.iowait(s:fd(), 'w')
+socket.iowait(s:fd(), 2)
+socket.iowait(s:fd(), '')
+socket.iowait(s:fd(), -1)
+socket.iowait(s:fd(), 'RW')
 s:readable(0)
 s:errno() > 0
 s:error()
@@ -61,7 +72,8 @@ s:wait(.01)
 pong = s:sysread()
 string.len(pong)
 msgpack.decode(pong)
-msgpack.decode(pong, 6)
+function remove_schema_id(t, x) if t[5] then t[5] = 'XXX' end return t, x end
+remove_schema_id(msgpack.decode(pong, 6))
 
 s:close()
 
@@ -332,19 +344,26 @@ ch:get(1)
 s:error()
 
 -- random port
-port = 33123
 master = socket('PF_INET', 'SOCK_STREAM', 'tcp')
 master:setsockopt('SOL_SOCKET', 'SO_REUSEADDR', true)
-master:bind('127.0.0.1', port)
-master:listen()
+port = 32768 + math.random(32768)
+attempt = 0
 test_run:cmd("setopt delimiter ';'")
+while attempt < 10 do
+    if not master:bind('127.0.0.1', port)  then
+        port = 32768 + math.random(32768)
+        attempt = attempt + 1
+    else
+        break
+    end
+end;
+master:listen();
 function gh361()
     local s = socket('PF_INET', 'SOCK_STREAM', 'tcp')
     s:sysconnect('127.0.0.1', port)
     s:wait()
     res = s:read(1200)
 end;
-
 test_run:cmd("setopt delimiter ''");
 f = fiber.create(gh361)
 fiber.cancel(f)

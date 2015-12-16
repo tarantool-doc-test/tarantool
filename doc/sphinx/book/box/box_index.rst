@@ -14,7 +14,11 @@ API is a direct binding to corresponding methods of index objects of type
 
     .. data:: unique
 
-        true if the index is unique.
+        True if the index is unique, false if the index is not unique.
+
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`.
 
         :rtype: boolean
 
@@ -22,32 +26,39 @@ API is a direct binding to corresponding methods of index objects of type
 
         Index type, 'TREE' or 'HASH' or 'BITSET' or 'RTREE'.
 
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`.
+
         :rtype: string
 
     .. data:: parts
 
         An array describing index key fields.
 
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`.
+
         :rtype: table
 
-        Example:
-        
-        | :codenormal:`tarantool>` :codebold:`box.space.tester.index.primary`
-        | :codenormal:`---`
-        | - :codenormal:`unique: true`
-        | |nbsp| :codenormal:`parts:`
-        | |nbsp| :codenormal:`0:`
-        | |nbsp| - :codenormal:`type: NUM`
-        | |nbsp| |nbsp| |nbsp| :codenormal:`fieldno: 1`
-        | |nbsp| |nbsp| |nbsp| :codenormal:`id: 0`
-        | |nbsp| |nbsp| |nbsp| :codenormal:`space_id: 513`
-        | |nbsp| :codenormal:`name: primary`
-        | |nbsp| :codenormal:`type: TREE`
-        | :codenormal:`...` |br|
+        **Example:**
 
-    .. _index-iterator:
+        .. code-block:: tarantoolsession
 
-    .. function:: pairs(bitset-value | field-value..., iterator-type)
+            tarantool> box.space.tester.index.primary
+            ---
+            - unique: true
+              parts:
+              - type: NUM
+                fieldno: 1
+              id: 0
+              space_id: 513
+              name: primary
+              type: TREE
+            ...
+
+    .. method:: pairs(bitset-value | field-value..., iterator-type)
 
         This method provides iteration support within an index. Parameter type is
         used to identify the semantics of iteration. Different index types support
@@ -67,13 +78,17 @@ API is a direct binding to corresponding methods of index objects of type
         Iteration, resumed after a yield point, does not preserve the read view,
         but continues with the new content of the database.
 
-        :param type: iteration strategy as defined in tables below
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`{iterator-type}` = iteration strategy as defined in tables below.
+
         :return: this method returns an iterator closure, i.e. a function which can
                 be used to get the next value on each invocation
         :rtype:  function, tuple
 
-        :except: Selected iteration type is not supported in the subject index type,
-                or supplied parameters do not match iteration type.
+        Possible errors: Selected iteration type is not supported in the subject index type,
+        or supplied parameters do not match iteration type.
 
         Complexity Factors: Index size, Index type, Number of tuples accessed.
 
@@ -238,60 +253,59 @@ API is a direct binding to corresponding methods of index objects of type
             |                    |           | values.                                             |
             +--------------------+-----------+-----------------------------------------------------+
 
-|br|
+        **Example:**
 
-        Example With Default 'TREE' Index and ``pairs()`` function:
-        
-        | :codenormal:`tarantool>` :codebold:`s = box.schema.space.create('space17')`
-        | :codenormal:`---`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`s:create_index('primary', {parts = {1, 'STR', 2, 'STR'}})`
-        | :codenormal:`---`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`s:insert{'C', 'C'}`
-        | :codenormal:`---`
-        | :codenormal:`- ['C', 'C']`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`s:insert{'B', 'A'}`
-        | :codenormal:`---`
-        | :codenormal:`- ['B', 'A']`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`s:insert{'C', '!'}`
-        | :codenormal:`---`
-        | :codenormal:`- ['C', '!']`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`s:insert{'A', 'C'}`
-        | :codenormal:`---`
-        | :codenormal:`- ['A', 'C']`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`console = require('console'); console.delimiter('!')`
-        | :codenormal:`---`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`function example()`
-        | :codenormal:`>` :codebold:`for _, tuple in`
-        | :codenormal:`>` :codebold:`s.index.primary:pairs(nil, {iterator = box.index.ALL}) do`
-        | :codenormal:`>` :codebold:`print(tuple)`
-        | :codenormal:`>` :codebold:`end`
-        | :codenormal:`>` :codebold:`end!`
-        | :codenormal:`---`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`console.delimiter('')!`
-        | :codenormal:`---`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`example()`
-        | :codenormal:`['A', 'C']`
-        | :codenormal:`['B', 'A']`
-        | :codenormal:`['C', '!']`
-        | :codenormal:`['C', 'C']`
-        | :codenormal:`---`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`s:drop()`
-        | :codenormal:`---`
-        | :codenormal:`...`
+        Default 'TREE' Index and ``pairs()`` function:
 
-.. _index_select:
+        .. code-block:: tarantoolsession
 
-    .. function:: select(key, options)
+            tarantool> s = box.schema.space.create('space17')
+            ---
+            ...
+            tarantool> s:create_index('primary', {
+                     >   parts = {1, 'STR', 2, 'STR'}
+                     > })
+            ---
+            ...
+            tarantool> s:insert{'C', 'C'}
+            ---
+            - ['C', 'C']
+            ...
+            tarantool> s:insert{'B', 'A'}
+            ---
+            - ['B', 'A']
+            ...
+            tarantool> s:insert{'C', '!'}
+            ---
+            - ['C', '!']
+            ...
+            tarantool> s:insert{'A', 'C'}
+            ---
+            - ['A', 'C']
+            ...
+            tarantool> function example()
+                     >   for _, tuple in
+                     >     s.index.primary:pairs(nil, {
+                     >         iterator = box.index.ALL}) do
+                     >       print(tuple)
+                     >   end
+                     > end
+            ---
+            ...
+            tarantool> example()
+            ['A', 'C']
+            ['B', 'A']
+            ['C', '!']
+            ['C', 'C']
+            ---
+            ...
+            tarantool> s:drop()
+            ---
+            ...
+
+    .. _index_object_select:
+
+    .. method:: select(key, options)
 
         This is an alternative to :func:`box.space...select() <space_object.select>`
         which goes via a particular index and can make use of additional
@@ -299,36 +313,54 @@ API is a direct binding to corresponding methods of index objects of type
         maximum number of tuples to return) and the offset (that is, which
         tuple to start with in the list).
 
-        Parameters: :codenormal:`field-value(s)` = values to be matched against the index key.
-        :codenormal:`option(s)` any or all of
-        :codenormal:`iterator =` :codeitalic:`iterator-type`,
-        :codenormal:`limit =` :codeitalic:`maximum-number-of-tuples`,
-        :codenormal:`offset =` :codeitalic:`start-tuple-number`. 
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`field-value(s)` = values to be matched against the index key;
+        * :samp:`option(s)` any or all of
+            * :samp:`iterator = {iterator-type}`,
+            * :samp:`limit = {maximum-number-of-tuples}`,
+            * :samp:`offset = {start-tuple-number}`.
 
         :return: the tuple or tuples that match the field values.
         :rtype:  tuple set as a Lua table
 
-        EXAMPLE
+        **Example:**
 
-        | :codenormal:`-- Create a space named tester.`
-        | :codenormal:`-- Create a unique index 'primary', which won't be needed for this example.`
-        | :codenormal:`-- Create a non-unique index 'secondary' with an index on the second field.`
-        | :codenormal:`-- Insert three tuples, values in field[2] equal to 'X', 'Y', and 'Z'.`
-        | :codenormal:`-- Select all tuples where the secondary index keys are greater than 'X'.`
-        | :codenormal:`tarantool>`:codebold:`box.schema.space.create('tester')`
-        | :codenormal:`tarantool>`:codebold:`box.space.tester:create_index('primary', {parts = {1, 'NUM' }})`
-        | :codenormal:`tarantool>`:codebold:`box.space.tester:create_index('secondary', {type = 'tree', unique = false, parts = {2, 'STR'}})`
-        | :codenormal:`tarantool>`:codebold:`box.space.tester:insert{1,'X','Row with field[2]=X'}`
-        | :codenormal:`tarantool>`:codebold:`box.space.tester:insert{2,'Y','Row with field[2]=Y'}`
-        | :codenormal:`tarantool>`:codebold:`box.space.tester:insert{3,'Z','Row with field[2]=Z'}`
-        | :codenormal:`tarantool>`:codebold:`box.space.tester.index.secondary:select({'X'}, {iterator = 'GT', limit = 1000})`
+        .. code-block:: tarantoolsession
+
+            -- Create a space named tester.
+            tarantool> sp = box.schema.space.create('tester')
+            -- Create a unique index 'primary'
+            -- which won't be needed for this example.
+            tarantool> sp:create_index('primary', {parts = {1, 'NUM' }})
+            -- Create a non-unique index 'secondary'
+            -- with an index on the second field.
+            tarantool> sp:create_index('secondary', {
+                     >   type = 'tree',
+                     >   unique = false,
+                     >   parts = {2, 'STR'}
+                     > })
+            -- Insert three tuples, values in field[2]
+            -- equal to 'X', 'Y', and 'Z'.
+            tarantool> sp:insert{1, 'X', 'Row with field[2]=X'}
+            tarantool> sp:insert{2, 'Y', 'Row with field[2]=Y'}
+            tarantool> sp:insert{3, 'Z', 'Row with field[2]=Z'}
+            -- Select all tuples where the secondary index
+            -- keys are greater than 'X'.`
+            tarantool> sp.index.secondary:select({'X'}, {
+                     >   iterator = 'GT',
+                     >   limit = 1000
+                     > })
 
         The result will be a table of tuple and will look like this:
 
-        | :codenormal:`---`
-        | :codenormal:`- - [2, 'Y', 'Row with field[2]=Y']`
-        | :codenormal:`  - [3, 'Z', 'Row with field[2]=Z']`
-        | :codenormal:`...`
+        .. code-block:: yaml
+
+            ---
+            - - [2, 'Y', 'Row with field[2]=Y']
+              - [3, 'Z', 'Row with field[2]=Z']
+            ...
 
         .. NOTE::
 
@@ -354,120 +386,169 @@ API is a direct binding to corresponding methods of index objects of type
 
             :samp:`box.space.{space-name}.index.{index-name}:select(...)[1]``. can be
             replaced by :samp:`box.space.{space-name}.index.{index-name}:get(...)`.
-            That is, :codenormal:`get` can be used as a convenient shorthand to get the first
-            tuple in the tuple set that would be returned by :codenormal:`select`. However,
-            if there is more than one tuple in the tuple set, then :codenormal:`get` returns
+            That is, ``get`` can be used as a convenient shorthand to get the first
+            tuple in the tuple set that would be returned by ``select``. However,
+            if there is more than one tuple in the tuple set, then ``get`` returns
             an error.
 
-        
-        Example with BITSET index:
+
+        **Example with BITSET index:**
 
         The following script shows creation and search with a BITSET index.
         Notice: BITSET cannot be unique, so first a primary-key index is created.
         Notice: bit values are entered as hexadecimal literals for easier reading.
-        
-        | :codenormal:`tarantool>`:codebold:`s = box.schema.space.create('space_with_bitset')`
-        | :codenormal:`tarantool>`:codebold:`s:create_index('primary_index',{parts={1,'STR'},unique=true,type='TREE'})`
-        | :codenormal:`tarantool>`:codebold:`s:create_index('bitset_index',{parts={2, 'NUM'},unique=false,type='BITSET'})`
-        | :codenormal:`tarantool>`:codebold:`s:insert{'Tuple with bit value = 01', 0x01}`
-        | :codenormal:`tarantool>`:codebold:`s:insert{'Tuple with bit value = 10', 0x02}`
-        | :codenormal:`tarantool>`:codebold:`s:insert{'Tuple with bit value = 11', 0x03}`
-        | :codenormal:`tarantool>`:codebold:`s.index.bitset_index:select(0x02,{iterator=box.index.EQ})`
-        | :codenormal:`tarantool>`:codebold:`s.index.bitset_index:select(0x02,{iterator=box.index.BITS_ANY_SET})`
-        | :codenormal:`tarantool>`:codebold:`s.index.bitset_index:select(0x02,{iterator=box.index.BITS_ALL_SET})`
-        | :codenormal:`tarantool>`:codebold:`s.index.bitset_index:select(0x02,{iterator=box.index.BITS_ALL_NOT_SET})`
-    
-        The above script will return:
-             
-        | :codenormal:`For EQ: Tuple with bit value = 10`
-        | :codenormal:`For BITS_ANY_SET: Tuple with bit value = 10 + Tuple with bit value = 11`
-        | :codenormal:`For BITS_ALL_SET: Tuple with bit value = 10 + Tuple with bit value = 11`
-        | :codenormal:`For BIT_ALL_NOT_SET: Tuple with bit value = 01`
 
-    .. function:: min([key-value])
+        .. code-block:: tarantoolsession
+
+            tarantool> s = box.schema.space.create('space_with_bitset')
+            tarantool> s:create_index('primary_index', {
+                     >   parts = {1, 'STR'},
+                     >   unique = true,
+                     >   type = 'TREE'
+                     > })
+            tarantool> s:create_index('bitset_index', {
+                     >   parts = {2, 'NUM'},
+                     >   unique = false,
+                     >   type = 'BITSET'
+                     > })
+            tarantool> s:insert{'Tuple with bit value = 01', 0x01}
+            tarantool> s:insert{'Tuple with bit value = 10', 0x02}
+            tarantool> s:insert{'Tuple with bit value = 11', 0x03}
+            tarantool> s.index.bitset_index:select(0x02, {
+                     >   iterator = box.index.EQ
+                     > })
+            ---
+            - - ['Tuple with bit value = 10', 2]
+            ...
+            tarantool> s.index.bitset_index:select(0x02, {
+                     >   iterator = box.index.BITS_ANY_SET
+                     > })
+            ---
+            - - ['Tuple with bit value = 10', 2]
+              - ['Tuple with bit value = 11', 3]
+            ...
+            tarantool> s.index.bitset_index:select(0x02, {
+                     >   iterator = box.index.BITS_ALL_SET
+                     > })
+            ---
+            - - ['Tuple with bit value = 10', 2]
+              - ['Tuple with bit value = 11', 3]
+            ...
+            tarantool> s.index.bitset_index:select(0x02, {
+                     >   iterator = box.index.BITS_ALL_NOT_SET
+                     > })
+            ---
+            - - ['Tuple with bit value = 01', 1]
+            ...
+
+    .. method:: min([key-value])
 
         Find the minimum value in the specified index.
+
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`key-value`.
 
         :return: the tuple for the first key in the index. If optional
                 ``key-value`` is supplied, returns the first key which
                 is greater than or equal to ``key-value``.
         :rtype:  tuple
-        :except: index is not of type 'TREE'.
+
+        Possible errors: index is not of type 'TREE'.
 
         Complexity Factors: Index size, Index type.
 
-        EXAMPLE
+        **Example:**
 
-        | :codenormal:`tarantool>`  :codebold:`box.space.tester.index.primary:min()`
-        | :codenormal:`---`
-        | :codenormal:`- ['Alpha!', 55, 'This is the first tuple!']`
-        | :codenormal:`...`
+        .. code-block:: tarantoolsession
 
-    .. function:: max([key-value])
+            tarantool> box.space.tester.index.primary:min()
+            ---
+            - ['Alpha!', 55, 'This is the first tuple!']
+            ...
+
+    .. method:: max([key-value])
 
         Find the maximum value in the specified index.
+
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`key-value`.
 
         :return: the tuple for the last key in the index. If optional ``key-value``
                 is supplied, returns the last key which is less than or equal to
                 ``key-value``.
         :rtype:  tuple
-        :except: index is not of type 'TREE'.
+
+        Possible errors: index is not of type 'TREE'.
 
         Complexity Factors: Index size, Index type.
 
-        EXAMPLE
+        **Example:**
 
-        | :codenormal:`tarantool>` :codebold:`box.space.tester.index.primary:max()`
-        | :codenormal:`---`
-        | :codenormal:`- ['Gamma!', 55, 'This is the third tuple!']`
-        | :codenormal:`...`
+        .. code-block:: tarantoolsession
 
+            tarantool> box.space.tester.index.primary:max()
+            ---
+            - ['Gamma!', 55, 'This is the third tuple!']
+            ...
 
-    .. function:: random(random-value)
+    .. method:: random(random-value)
 
         Find a random value in the specified index. This method is useful when it's
         important to get insight into data distribution in an index without having
         to iterate over the entire data set.
 
-        :param integer random-value: an arbitrary non-negative integer.
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`random-value` (type = number) = an arbitrary non-negative integer.
+
         :return: the tuple for the random key in the index.
         :rtype:  tuple
 
         Complexity Factors: Index size, Index type.
 
-        EXAMPLE
+        **Example:**
 
-        | :codenormal:`tarantool>` :codebold:`box.space.tester.index.secondary:random(1)`
-        | :codenormal:`---`
-        | :codenormal:`- ['Beta!', 66, 'This is the second tuple!']`
-        | :codenormal:`...`
+        .. code-block:: tarantoolsession
 
-    .. function:: count(key-value, options)
+            tarantool> box.space.tester.index.secondary:random(1)
+            ---
+            - ['Beta!', 66, 'This is the second tuple!']
+            ...
+
+    .. method:: count(key-value, options)
 
         Iterate over an index, counting the number of
         tuples which equal the provided search criteria.
 
-        :param lua-value key-value: the value which must match the key(s) in the
-                                    specified index. The type may be a list of
-                                    field-values, or a tuple containing only
-                                    the field-values.
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`{key-value}` (type = Lua table or scalar) =
+          the value which must match the key(s) in the specified index. The type
+          may be a list of field-values, or a tuple containing only the
+          field-values; :samp:{options}`.
 
         :return: the number of matching index keys. The ``count`` function
                 is only applicable for the memtx storage engine.
         :rtype:  number
 
-        EXAMPLE
+        **Example:**
 
-        | :codenormal:`tarantool>` :codebold:`box.space.tester.index.primary:count(999)`
-        | :codenormal:`---`
-        | :codenormal:`- 0`
-        | :codenormal:`...`
-        | :codenormal:`tarantool>` :codebold:`box.space.tester.index.primary:count('Alpha!', { iterator = 'LE' })`
-        | :codenormal:`---`
-        | :codenormal:`- 1`
-        | :codenormal:`...`
+            tarantool> box.space.tester.index.primary:count(999)
+            ---
+            - 0
+            ...
+            tarantool> box.space.tester.index.primary:count('Alpha!', { iterator = 'LE' })
+            ---
+            - 1
+            ...
 
-    .. function:: update(key, {{operator, field_no, value}, ...})
+    .. method:: update(key, {{operator, field_no, value}, ...})
 
         Update a tuple.
 
@@ -475,81 +556,116 @@ API is a direct binding to corresponding methods of index objects of type
         but key is searched in this index instead of primary key.
         This index ought to be unique.
 
-        :param lua-value key: key to be matched against the index key
-        :param table {operator, field_no, value}: update opearations (see: func:`box.space...update() <space_object.update>`)
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`key-value`;
+        * :samp:`{key}` (type = Lua table or scalar) = key to be matched against
+          the index key;
+        * :samp:`{operator, field_no, value}` (type = Lua table) = update
+          operations (see: :func:`box.space...update() <space_object.update>`).
 
         :return: the updated tuple.
         :rtype:  tuple
 
-    .. function:: delete(key)
+    .. method:: delete(key)
 
         Delete a tuple identified by a key.
 
-        Same as :func:`box.space...delete() <space_object.delete>`,
-        but key is searched in this index instead of primary key.
-        This index ought to be unique.
+        Same as :func:`box.space...delete() <space_object.delete>`, but key is
+        searched in this index instead of in the primary-key index. This index
+        ought to be unique.
 
-        :param lua-value key: key to be matched against the index key
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`key` (type = Lua table or scalar) = key to be matched against
+          the index key.
 
         :return: the deleted tuple.
         :rtype:  tuple
 
-    .. function:: alter({options})
+    .. method:: alter({options})
 
         Alter an index.
 
-        :param table options: options list for create_index().
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`{options}` = options list, same as the options list for
+          :func:`create_index <space_object.create_index>`.
+
         :return: nil
 
-        :except: If index-name doesn't exist.
-        :except: The first index cannot be changed to {unique = false}.
-        :except: The alter function is only applicable for the memtx storage engine.
+        Possible errors: Index does not exist, or
+        the first index cannot be changed to {unique = false}, or
+        the alter function is only applicable for the memtx storage engine.
 
-        EXAMPLE
+        **Example:**
 
-        | :codenormal:`tarantool>` :codebold:`box.space.space55.index.primary:alter({type = 'HASH'})`
-        | :codenormal:`---`
-        | :codenormal:`...`
+        .. code-block:: tarantoolsession
 
-    .. function:: drop()
+            tarantool> box.space.space55.index.primary:alter({type = 'HASH'})
+            ---
+            ...
+
+    .. method:: drop()
 
         Drop an index. Dropping a primary-key index has
         a side effect: all tuples are deleted.
 
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`.
+
         :return: nil.
-        :except: If index-name doesn't exist.
 
-        EXAMPLE
+        Possible errors: Index does not exist.
 
-        | :codenormal:`tarantool>` :codebold:`box.space.space55.index.primary:drop()`
-        | :codenormal:`---`
-        | :codenormal:`...`
+        **Example:**
 
-    .. function:: rename(index-name)
+        .. code-block:: tarantoolsession
+
+            tarantool> box.space.space55.index.primary:drop()
+            ---
+            ...
+
+    .. method:: rename(index-name)
 
         Rename an index.
 
-        :param string index-name: new name for index.
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`;
+        * :samp:`{index-name}` (type = string) = new name for index.
+
         :return: nil
-        :except: If index-name doesn't exist.
 
-        EXAMPLE
+        Possible errors: index_object does not exist.
 
-        | :codenormal:`tarantool>` :codebold:`box.space.space55.index.primary:rename('secondary')`
-        | :codenormal:`---`
-        | :codenormal:`...`
+        **Example:**
+
+        .. code-block:: tarantoolsession
+
+            tarantool> box.space.space55.index.primary:rename('secondary')
+            ---
+            ...
 
         Complexity Factors: Index size, Index type, Number of tuples accessed.
 
-    .. function:: bsize()
+    .. method:: bsize()
 
         Return the total number of bytes taken by the index.
+
+        Parameters:
+
+        * :samp:`{index_object}` = an :ref:`object reference <object-reference>`.
 
         :return: number of bytes
         :rtype: number
 
 =================================================================
-                         Example showing use of the box functions
+              Example showing use of the box functions
 =================================================================
 
 This example will work with the sandbox configuration described in the preface.
@@ -577,9 +693,8 @@ Lua functions `os.date()`_ and `string.sub()`_.
 
 .. code-block:: lua
 
-    console = require('console'); console.delimiter('st_end')
     function example()
-      local a, b, c, table_of_selected_tuples
+      local a, b, c, table_of_selected_tuples, d
       local replaced_tuple, time_field
       local formatted_time_field
       local fiber = require('fiber')
@@ -599,23 +714,24 @@ Lua functions `os.date()`_ and `string.sub()`_.
       d = string.sub(c, 3, 6)
       formatted_time_field = formatted_time_field .. '.' .. d
       return formatted_time_field
-    end st_end
-    console.delimiter('') st_end
+    end
 
 ... And here is what happens when one invokes the function:
 
-    | :codenormal:`tarantool>` :codebold:`box.space.tester:delete(1000)`
-    | :codenormal:`---`
-    | :codenormal:`- 1000: {'264ee2da03634f24972be76c43808254', '1391037015.6809'}`
-    | :codenormal:`...`
-    | :codenormal:`tarantool>` :codebold:`example(1000)`
-    | :codenormal:`---`
-    | :codenormal:`- 2014-01-29 16:11:51.1582`
-    | :codenormal:`...`
-    | :codenormal:`tarantool>` :codebold:`example(1000)`
-    | :codenormal:`---`
-    | :codenormal:`- error: 'This tuple already has 3 fields'`
-    | :codenormal:`...`
+.. code-block:: tarantoolsession
+
+    tarantool> box.space.tester:delete(1000)
+    ---
+    - [1000, '264ee2da03634f24972be76c43808254', '1391037015.6809']
+    ...
+    tarantool> example(1000)
+    ---
+    - 2014-01-29 16:11:51.1582
+    ...
+    tarantool> example(1000)
+    ---
+    - error: 'This tuple already has 3 fields'
+    ...
 
 .. _RTREE:
 
@@ -626,15 +742,13 @@ Lua functions `os.date()`_ and `string.sub()`_.
 The :mod:`box.index` package may be used for spatial searches if the index type
 is RTREE. There are operations for searching *rectangles* (geometric objects
 with 4 corners and 4 sides) and *boxes* (geometric objects with more than 4
-corners and more than 4 sides, sometimes called hyperrectangles).
-This manual uses term *rectangle-or-box* for the whole class
-of objects that includes both rectangles and boxes.
-Only rectangles will be illustrated.
+corners and more than 4 sides, sometimes called hyperrectangles). This manual
+uses term *rectangle-or-box* for the whole class of objects that includes both
+rectangles and boxes. Only rectangles will be illustrated.
 
-Rectangles are
-described according to their X-axis (horizontal axis) and Y-axis (vertical axis)
-coordinates in a grid of arbitrary size. Here is a picture of four rectangles on
-a grid with 11 horizontal points and 11 vertical points:
+Rectangles are described according to their X-axis (horizontal axis) and Y-axis
+(vertical axis) coordinates in a grid of arbitrary size. Here is a picture of
+four rectangles on a grid with 11 horizontal points and 11 vertical points:
 
 ::
 
@@ -667,9 +781,18 @@ is Rectangle#2", and "Rectangle#3 is entirely inside Rectangle#2".
 
 Now let us create a space and add an RTREE index.
 
-| :codenormal:`tarantool>`:codebold:`s = box.schema.space.create('rectangles')`
-| :codenormal:`tarantool>`:codebold:`i = s:create_index('primary',{type='HASH',parts={1,'NUM'}})`
-| :codenormal:`tarantool>`:codebold:`r = s:create_index('spatial',{type='RTREE',unique=false,parts={2,'ARRAY'}})`
+.. code-block:: tarantoolsession
+
+    tarantool> s = box.schema.space.create('rectangles')
+    tarantool> i = s:create_index('primary', {
+             >   type = 'HASH',
+             >   parts = {1, 'NUM'}
+             > })
+    tarantool> r = s:create_index('primary', {
+             >   type = 'RTREE',
+             >   unique = false,
+             >   parts = {2, 'ARRAY'}
+             > })
 
 Field#1 doesn't matter, we just make it because we need a primary-key index.
 (RTREE indexes cannot be unique and therefore cannot be primary-key indexes.)
@@ -677,17 +800,31 @@ The second field must be an "array", which means its values must represent
 {x,y} points or {x1,y1,x2,y2} rectangles. Now let us populate the table by
 inserting two tuples, containing the coordinates of Rectangle#2 and Rectangle#4.
 
-| :codenormal:`tarantool>` :codebold:`s:insert{1, {3,5,9,10}}`
-| :codenormal:`tarantool>` :codebold:`s:insert{2, {10,11}}`
+.. code-block:: tarantoolsession
+
+    tarantool> s:insert{1, {3, 5, 9, 10}}
+    tarantool> s:insert{2, {10, 11}}
 
 And now, following the description of `RTREE iterator types`_, we can search the
 rectangles with these requests:
 
 .. _RTREE iterator types: rtree-iterator_
 
-| :codenormal:`tarantool>`:codebold:`r:select({10,11,10,11},{iterator='EQ'})   -- Request#1 (returns 1 tuple)`
-| :codenormal:`tarantool>`:codebold:`r:select({4,7,5,9},{iterator='GT'})       -- Request#2 (returns 1 tuple)`
-| :codenormal:`tarantool>`:codebold:`r:select({1,2,3,4},{iterator='NEIGHBOR'}) -- Request#3 (returns 2 tuples)`
+.. code-block:: tarantoolsession
+
+    tarantool> r:select({10, 11, 10, 11}, {iterator = 'EQ'})
+    ---
+    - - [2, [10, 11]]
+    ...
+    tarantool> r:select({4, 7, 5, 9}, {iterator = 'GT'})
+    ---
+    - - [1, [3, 5, 9, 10]]
+    ...
+    tarantool> r:select({1, 2, 3, 4}, {iterator = 'NEIGHBOR'})
+    ---
+    - - [1, [3, 5, 9, 10]]
+      - [2, [10, 11]]
+    ...
 
 Request#1 returns 1 tuple because the point {10,11} is the same as the rectangle
 {10,11,10,11} ("Rectangle#4" in the picture). Request#2 returns 1 tuple because
@@ -700,35 +837,52 @@ of {1,2,3,4} ("Rectangle#1" in the picture).
 Now let us create a space and index for cuboids, which are rectangle-or-boxes that have
 6 corners and 6 sides.
 
-| :codenormal:`tarantool>`:codebold:`box.schema.space.create('R')`
-| :codenormal:`tarantool>`:codebold:`box.space.R:create_index('primary',{parts={1,'NUM'}})`
-| :codenormal:`tarantool>`:codebold:`box.space.R:create_index('S',{type='RTREE',unique=false,dimension=3,parts={2,'ARRAY'}})`
+.. code-block:: tarantoolsession
 
-The additional field here is :codenormal:`dimension=3`. The default dimension is 2, which is
+    tarantool> s = box.schema.space.create('R')
+    tarantool> i = s:create_index('primary', {parts = {1, 'NUM'}})
+    tarantool> r = s:create_index('S', {
+             >   type = 'RTREE',
+             >   unique = false,
+             >   dimension = 3,
+             >   parts = {2, 'ARRAY'}
+             > })
+
+The additional field here is ``dimension=3``. The default dimension is 2, which is
 why it didn't need to be specified for the examples of rectangle. The maximum dimension
 is 20. Now for insertions and selections there will usually be 6 coordinates. For example:
 
-| :codenormal:`tarantool>`:codebold:`box.space.R:insert{1,{0,3,0,3,0,3}}`
-| :codenormal:`tarantool>`:codebold:`box.space.R.index.S:select({1,2,1,2,1,2},{iterator=box.index.GT})`
+.. code-block:: tarantoolsession
+
+    tarantool> s:insert{1, {0, 3, 0, 3, 0, 3}}
+    tarantool> r:select({1, 2, 1, 2, 1, 2}, {iterator = box.index.GT})
 
 Now let us create a space and index for Manhattan-style spatial objects, which are rectangle-or-boxes that have
 a different way to calculate neighbors.
 
-    | :codebold:`box.schema.space.create('R')`
-    | :codebold:`box.space.R:create_index('primary',{parts={1,'NUM'}})`
-    | :codebold:`box.space.R:create_index('S',{type='RTREE',unique=false,distance='manhattan',parts={2,'ARRAY'}})`
+.. code-block:: tarantoolsession
 
-The additional field here is :codenormal:`distance='manhattan'`.
+    tarantool> s = box.schema.space.create('R')
+    tarantool> i = s:create_index('primary', {parts = {1, 'NUM'}})
+    tarantool> r = s:create_index('S', {
+             >   type = 'RTREE',
+             >   unique = false,
+             >   distance = 'manhattan',
+             >   parts = {2, 'ARRAY'}
+             > })
+
+The additional field here is ``distance='manhattan'``.
 The default distance calculator is 'euclid', which is the straightforward as-the-crow-flies method.
 The optional distance calculator is 'manhattan', which can be a more appropriate method
 if one is following the lines of a grid rather than traveling in a straight line.
 
-    | :codebold:`box.space.R:insert{1,{0,3,0,3}}`
-    | :codebold:`box.space.R.index.S:select({1,2,1,2},{iterator=box.index.NEIGHBOR})`
+.. code-block:: tarantoolsession
+
+    tarantool> s:insert{1, {0, 3, 0, 3}}
+    tarantool> r:select({1, 2, 1, 2}, {iterator = box.index.NEIGHBOR})
 
 
 More examples of spatial searching are online in the file `R tree index quick
 start and usage`_.
 
 .. _R tree index quick start and usage: https://github.com/tarantool/tarantool/wiki/R-tree-index-quick-start-and-usage
-

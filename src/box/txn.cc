@@ -35,6 +35,7 @@
 #include "recovery.h"
 #include <fiber.h>
 #include "request.h" /* for request_name */
+#include "xrow.h"
 
 double too_long_threshold;
 
@@ -52,8 +53,8 @@ txn_add_redo(struct txn_stmt *stmt, struct request *request)
 		return;
 
 	/* Create a redo log row for Lua requests */
-	struct xrow_header *row= (struct xrow_header *)
-		region_alloc_xc(&fiber()->gc, sizeof(struct xrow_header));
+	struct xrow_header *row =
+		region_alloc_object_xc(&fiber()->gc, struct xrow_header);
 	/* Initialize members explicitly to save time on memset() */
 	row->type = request->type;
 	row->server_id = 0;
@@ -70,8 +71,8 @@ txn_stmt_new(struct txn *txn)
 {
 	assert(txn->in_stmt == false);
 	assert(stailq_empty(&txn->stmts) || !txn->is_autocommit);
-	struct txn_stmt *stmt = (struct txn_stmt *)
-		region_alloc_xc(&fiber()->gc, sizeof(struct txn_stmt));
+	struct txn_stmt *stmt =
+		region_alloc_object_xc(&fiber()->gc, struct txn_stmt);
 
 	/* Initialize members explicitly to save time on memset() */
 	stmt->space = NULL;
@@ -90,7 +91,7 @@ txn_begin(bool is_autocommit)
 {
 	assert(! in_txn());
 	struct txn *txn = (struct txn *)
-		region_alloc_xc(&fiber()->gc, sizeof(*txn));
+		region_alloc_object_xc(&fiber()->gc, struct txn);
 	/* Initialize members explicitly to save time on memset() */
 	stailq_create(&txn->stmts);
 	txn->n_rows = 0;
@@ -179,9 +180,17 @@ static int64_t
 txn_write_to_wal(struct txn *txn)
 {
 	assert(txn->n_rows > 0);
-	struct wal_request *req = (struct wal_request *)
-		region_alloc_xc(&fiber()->gc, sizeof(struct wal_request) +
-				sizeof(struct xrow_header) * txn->n_rows);
+
+	struct wal_request *req;
+	req = (struct wal_request *)region_aligned_alloc_xc(
+		&fiber()->gc,
+		sizeof(struct wal_request) +
+		         sizeof(req->rows[0]) * txn->n_rows,
+		alignof(struct wal_request));
+	/*
+	 * Note: offsetof(struct wal_request, rows) is more appropriate,
+	 * but compiler warns.
+	 */
 	req->n_rows = 0;
 
 	struct txn_stmt *stmt;
@@ -199,7 +208,14 @@ txn_write_to_wal(struct txn *txn)
 	assert(req->n_rows == txn->n_rows);
 
 	ev_tstamp start = ev_now(loop()), stop;
-	int64_t res = wal_write(recovery, req);
+	int64_t res;
+	if (wal == NULL) {
+		/** wal_mode = NONE or initial recovery. */
+		res = vclock_sum(&recovery->vclock);
+	} else {
+		res = wal_write(wal, req);
+	}
+
 	stop = ev_now(loop());
 	if (stop - start > too_long_threshold)
 		say_warn("too long WAL write: %.3f sec", stop - start);
@@ -328,7 +344,7 @@ box_txn_commit()
 		return 0;
 	try {
 		txn_commit(txn);
-	} catch (...) {
+	} catch (Exception *e) {
 		txn_rollback();
 		return -1;
 	}
@@ -344,7 +360,13 @@ box_txn_rollback()
 void *
 box_txn_alloc(size_t size)
 {
-	return region_alloc(&fiber()->gc, size);
+	union natural_align {
+		void *p;
+		double lf;
+		long l;
+	};
+	return region_aligned_alloc(&fiber()->gc, size,
+	                            alignof(union natural_align));
 }
 
 } /* extern "C" */

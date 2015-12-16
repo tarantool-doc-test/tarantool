@@ -41,8 +41,8 @@ on top of the **cooperative multitasking** environment that Tarantool itself
 uses. A key feature is that the functions can access and modify databases
 atomically.  Thus some developers look at it as a DBMS with a popular stored
 procedure language, while others look at it as a replacement for multiple
-components of multi-tier Web application architectures. Performance is a few
-thousand transactions per second on a laptop, scalable upwards or outwards to
+components of multi-tier Web application architectures. Performance can be a few
+hundred thousand transactions per second on a laptop, scalable upwards or outwards to
 server farms.
 
 **Tarantool is lock-free** in typical situations. Instead of the operating system's
@@ -115,16 +115,22 @@ sets.
 This manual is written with `Sphinx`_ markup and uses
 standard formatting conventions:
 
-UNIX shell command input is prefixed with ':codenormal:`$` ' and is in a fixed-width font:
-  :codenormal:`$ tarantool --help` 
+UNIX shell command input is prefixed with '``$``' and is in a fixed-width font:
+
+.. code-block:: console
+
+  $ tarantool --help
 
 File names are also in a fixed-width font:
+
   :codenormal:`/path/to/var/dir` 
 
 Text that represents user input is in boldface:
+
   :codebold:`$ your input here` 
 
 Within user input, replaceable items are in italics:
+
   :codebold:`$ tarantool` :codebolditalic:`--option` 
 
 ===============================================================================

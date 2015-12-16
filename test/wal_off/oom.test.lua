@@ -1,6 +1,7 @@
 env = require('test_run')
 test_run = env.new()
 test_run:cmd('restart server default')
+test_run:cmd("push filter 'error: Failed to allocate [0-9]+ ' to 'error: Failed to allocate <NUM> '")
 
 space = box.schema.space.create('tweedledum')
 index = space:create_index('primary', { type = 'hash' })
@@ -10,20 +11,20 @@ while true do
     space:insert{space:len(), string.rep('test', i)}
     i = i + 1
 end;
-space:len();
+space:len() > 5000;
 i = 1;
 while true do
     space:insert{space:len(), string.rep('test', i)}
     i = i + 1
 end;
-space:len();
+space:len() > 5000;
 i = 1;
 while true do
     space:insert{space:len(), string.rep('test', i)}
     i = i + 1
 end;
 test_run:cmd("setopt delimiter ''");
-space:len()
+space:len() > 5000
 space.index['primary']:get{0}
 space.index['primary']:get{5}
 space.index['primary']:get{9}
@@ -88,16 +89,16 @@ index = space:create_index('primary', { type = 'hash' })
 
 collectgarbage('collect')
 for i=1,10000 do space:insert{i, str} end
-definatelly_used = index:count() * 16 * 1024
-2 * definatelly_used > arena_bytes -- at least half memory used
+definitely_used = index:count() * 16 * 1024
+2 * definitely_used > arena_bytes -- at least half memory used
 to_del = index:count()
 for i=1,to_del do space:delete{i} end
 index:count()
 
 collectgarbage('collect')
 for i=1,10000 do space:insert{i, str} end
-definatelly_used = index:count() * 16 * 1024
-2 * definatelly_used > arena_bytes -- at least half memory used
+definitely_used = index:count() * 16 * 1024
+2 * definitely_used > arena_bytes -- at least half memory used
 space:truncate()
 index:count()
 

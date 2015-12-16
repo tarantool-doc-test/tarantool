@@ -1,3 +1,34 @@
+/*
+ * Copyright 2010-2015, Tarantool AUTHORS, please see AUTHORS file.
+ *
+ * Redistribution and use in source and binary forms, with or
+ * without modification, are permitted provided that the following
+ * conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above
+ *    copyright notice, this list of conditions and the
+ *    following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above
+ *    copyright notice, this list of conditions and the following
+ *    disclaimer in the documentation and/or other materials
+ *    provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY AUTHORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+ * <COPYRIGHT HOLDER> OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ * INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+ * BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
+ * THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+
 #include <bit/bit.h>
 #include <lib/msgpuck/msgpuck.h>
 #include "scramble.h"
@@ -5,8 +36,6 @@
 #include <box/tuple.h>
 #include <box/index.h>
 #include <box/func.h>
-#include <box/lua/tuple.h>
-#include <box/lua/call.h>
 #include <box/sophia_engine.h>
 #include <box/request.h>
 #include <box/port.h>
@@ -56,12 +85,12 @@ void *ffi_symbols[] = {
 	(void *) box_index_count,
 	(void *) box_index_iterator,
 	(void *) box_iterator_next,
-	(void *) boxffi_tuple_update,
+	(void *) box_tuple_update,
+	(void *) box_tuple_upsert,
 	(void *) password_prepare,
 	(void *) load_cfg,
 	(void *) box_set_listen,
 	(void *) box_set_replication_source,
-	(void *) box_set_wal_mode,
 	(void *) box_set_log_level,
 	(void *) box_set_io_collect_interval,
 	(void *) box_set_snap_io_rate_limit,

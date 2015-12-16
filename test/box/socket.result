@@ -108,6 +108,50 @@ s:wait(.01)
 ---
 - RW
 ...
+socket.iowait(s:fd(), 'RW')
+---
+- RW
+...
+socket.iowait(s:fd(), 3)
+---
+- 3
+...
+socket.iowait(s:fd(), 'R')
+---
+- R
+...
+socket.iowait(s:fd(), 'r')
+---
+- R
+...
+socket.iowait(s:fd(), 1)
+---
+- 1
+...
+socket.iowait(s:fd(), 'W')
+---
+- W
+...
+socket.iowait(s:fd(), 'w')
+---
+- W
+...
+socket.iowait(s:fd(), 2)
+---
+- 2
+...
+socket.iowait(s:fd(), '')
+---
+- error: 'Usage: iowait(fd, 1 | ''r'' | 2 | ''w'' | 3 | ''rw'' [, timeout])'
+...
+socket.iowait(s:fd(), -1)
+---
+- error: 'Usage: iowait(fd, 1 | ''r'' | 2 | ''w'' | 3 | ''rw'' [, timeout])'
+...
+socket.iowait(s:fd(), 'RW')
+---
+- RW
+...
 s:readable(0)
 ---
 - true
@@ -168,17 +212,20 @@ pong = s:sysread()
 ...
 string.len(pong)
 ---
-- 23
+- 29
 ...
 msgpack.decode(pong)
 ---
-- 18
+- 24
 - 6
 ...
-msgpack.decode(pong, 6)
+function remove_schema_id(t, x) if t[5] then t[5] = 'XXX' end return t, x end
 ---
-- {0: 0, 1: 0}
-- 23
+...
+remove_schema_id(msgpack.decode(pong, 6))
+---
+- {0: 0, 1: 0, 5: 'XXX'}
+- 29
 ...
 s:close()
 ---
@@ -275,7 +322,7 @@ s:getsockopt('SOL_SOCKET', 'SO_DEBUG')
 ...
 s:setsockopt('SOL_SOCKET', 'SO_ACCEPTCONN', 1)
 ---
-- error: 'builtin/socket.lua:392: Socket option SO_ACCEPTCONN is read only'
+- error: 'builtin/socket.lua:384: Socket option SO_ACCEPTCONN is read only'
 ...
 s:getsockopt('SOL_SOCKET', 'SO_RCVBUF') > 32
 ---
@@ -1019,9 +1066,6 @@ s:error()
 - error: 'builtin/socket.lua:86: attempt to use closed socket'
 ...
 -- random port
-port = 33123
----
-...
 master = socket('PF_INET', 'SOCK_STREAM', 'tcp')
 ---
 ...
@@ -1029,15 +1073,27 @@ master:setsockopt('SOL_SOCKET', 'SO_REUSEADDR', true)
 ---
 - true
 ...
-master:bind('127.0.0.1', port)
+port = 32768 + math.random(32768)
 ---
-- true
 ...
-master:listen()
+attempt = 0
 ---
-- true
 ...
 test_run:cmd("setopt delimiter ';'")
+---
+- true
+...
+while attempt < 10 do
+    if not master:bind('127.0.0.1', port)  then
+        port = 32768 + math.random(32768)
+        attempt = attempt + 1
+    else
+        break
+    end
+end;
+---
+...
+master:listen();
 ---
 - true
 ...

@@ -2,7 +2,6 @@
                              Overview
 -------------------------------------------------------------------------------
 
-
 Tarantool is a Lua application server integrated with a database management system.
 It has a "fiber" model which means that many applications can run simultaneously on
 a single thread, while the Tarantool server can run multiple threads for input-output
@@ -30,8 +29,8 @@ on top of the **cooperative multitasking** environment that Tarantool itself
 uses. A key feature is that the functions can access and modify databases
 atomically.  Thus some developers look at it as a DBMS with a popular stored
 procedure language, while others look at it as a replacement for multiple
-components of multi-tier Web application architectures. Performance is a few
-thousand transactions per second on a laptop, scalable upwards or outwards to
+components of multi-tier Web application architectures. Performance can be a few
+hundred thousand transactions per second on a laptop, scalable upwards or outwards to
 server farms.
 
 ===============================================================================

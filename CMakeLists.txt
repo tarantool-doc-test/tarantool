@@ -129,8 +129,8 @@ add_custom_target(ctags DEPENDS tags)
 # Define PACKAGE_VERSION -- a string constant with tarantool version.
 #
 set (CPACK_PACKAGE_VERSION_MAJOR "1")
-set (CPACK_PACKAGE_VERSION_MINOR "6")
-set (CPACK_PACKAGE_VERSION_PATCH "7")
+set (CPACK_PACKAGE_VERSION_MINOR "7")
+set (CPACK_PACKAGE_VERSION_PATCH "0")
 
 set (PACKAGE_VERSION "")
 
@@ -307,6 +307,8 @@ libcoro_build()
 add_dependencies(build_bundled_libs coro)
 
 if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "86" OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "amd64")
+    add_definitions("-DCORO_ASM")
+elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm" OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES "aarch64")
     add_definitions("-DCORO_ASM")
 else()
     add_definitions("-DCORO_SJLJ")

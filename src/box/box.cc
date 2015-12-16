@@ -31,6 +31,7 @@
 #include "box/box.h"
 
 #include <say.h>
+#include <scoped_guard.h>
 #include "iproto.h"
 #include "iproto_constants.h"
 #include "recovery.h"
@@ -39,8 +40,8 @@
 #include <rmean.h>
 #include "main.h"
 #include "tuple.h"
-#include "lua/call.h"
 #include "session.h"
+#include "func.h"
 #include "schema.h"
 #include "engine.h"
 #include "memtx_engine.h"
@@ -57,6 +58,10 @@
 #include "coio.h"
 #include "cluster.h" /* replica */
 #include "title.h"
+#include "lua/call.h" /* box_lua_call */
+#include "iproto_port.h"
+#include "xrow.h"
+#include "xrow_io.h"
 
 static char status[64] = "unknown";
 
@@ -261,7 +266,6 @@ box_check_rows_per_wal(int rows_per_wal)
 void
 box_check_config()
 {
-	box_check_wal_mode(cfg_gets("wal_mode"));
 	box_check_uri(cfg_gets("listen"), "listen");
 	box_check_replication_source();
 	box_check_readahead(cfg_geti("readahead"));
@@ -270,47 +274,64 @@ box_check_config()
 }
 
 /*
- * Sync box.cfg.replication_source and cluster registry.
+ * Parse box.cfg.replication_source and create appliers.
+ */
+static struct applier **
+cfg_get_replication_source(int *p_count)
+{
+	/* Use static buffer for result */
+	static struct applier *appliers[VCLOCK_MAX];
+
+	int count = cfg_getarr_size("replication_source");
+	if (count >= VCLOCK_MAX) {
+		tnt_raise(ClientError, ER_CFG, "replication_source",
+				"too many replicas");
+	}
+
+	for (int i = 0; i < count; i++) {
+		const char *source = cfg_getarr_elem("replication_source", i);
+		struct applier *applier = applier_new(source);
+		if (applier == NULL) {
+			/* Delete created appliers */
+			while (--i >= 0)
+				applier_delete(appliers[i]);
+			return NULL;
+		}
+		appliers[i] = applier; /* link to the list */
+	}
+
+	*p_count = count;
+
+	return appliers;
+}
+
+/*
+ * Sync box.cfg.replication_source with the cluster registry, but
+ * don't start appliers.
  */
 static void
 box_sync_replication_source(void)
 {
-	/* Reset cfg_merge_flag for all replicas */
-	cluster_foreach_applier(applier) {
-		applier->cfg_merge_flag = false;
-	}
+	int count = 0;
+	struct applier **appliers = cfg_get_replication_source(&count);
+	if (appliers == NULL)
+		diag_raise();
 
-	/* Add new replicas and set cfg_merge_flag for existing */
-	int count = cfg_getarr_size("replication_source");
-	for (int i = 0; i < count; i++) {
-		const char *source = cfg_getarr_elem("replication_source", i);
-		/* Try to find applier with the same source in the registry */
-		struct applier *applier = cluster_find_applier(source);
-		if (applier == NULL) {
-			/* Start new applier using specified source */
-			applier = applier_new(source); /* may throw */
-			cluster_add_applier(applier);
-		}
-		applier->cfg_merge_flag = true;
-	}
+	auto guard = make_scoped_guard([=]{
+		for (int i = 0; i < count; i++)
+			applier_delete(appliers[i]); /* doesn't affect diag */
+	});
 
-	/* Remove replicas without cfg_merge_flag */
-	struct applier *applier = cluster_applier_first();
-	while (applier != NULL) {
-		struct applier *next = cluster_applier_next(applier);
-		if (!applier->cfg_merge_flag) {
-			applier_stop(applier); /* cancels a background fiber */
-			cluster_del_applier(applier);
-			applier_delete(applier);
-		}
-		applier = next;
-	}
+	applier_connect_all(appliers, count, recovery);
+	cluster_set_appliers(appliers, count);
+
+	guard.is_active = false;
 }
 
 extern "C" void
 box_set_replication_source(void)
 {
-	if (recovery->writer == NULL) {
+	if (wal == NULL) {
 		/*
 		 * Do nothing, we're in local hot standby mode, the server
 		 * will automatically begin following the replica when local
@@ -320,17 +341,9 @@ box_set_replication_source(void)
 	}
 
 	box_sync_replication_source();
-
-	/* Start all replicas from the cluster registry */
-	cluster_foreach_applier(applier) {
-		if (applier->reader == NULL) {
-			applier_start(applier, recovery);
-		} else if (applier->state == APPLIER_OFF ||
-			   applier->state == APPLIER_STOPPED) {
-			/* Re-start faulted replicas */
-			applier_stop(applier);
-			applier_start(applier, recovery);
-		}
+	server_foreach(server) {
+		if (server->applier != NULL)
+			applier_resume(server->applier);
 	}
 }
 
@@ -363,24 +376,6 @@ box_cfg_listen_eq(struct uri *what)
 		uri.host_len == what->host_len &&
 		memcmp(uri.service, what->service, uri.service_len) == 0 &&
 		memcmp(uri.host, what->host, uri.host_len) == 0);
-}
-
-extern "C" void
-box_set_wal_mode(void)
-{
-	const char *mode_name = cfg_gets("wal_mode");
-	enum wal_mode mode = box_check_wal_mode(mode_name);
-	if (mode != recovery->wal_mode &&
-	    (mode == WAL_FSYNC || recovery->wal_mode == WAL_FSYNC)) {
-		tnt_raise(ClientError, ER_CFG, "wal_mode",
-			  "cannot switch to/from fsync");
-	}
-	/**
-	 * Really update WAL mode only after we left local hot standby,
-	 * since local hot standby expects it to be NONE.
-	 */
-	if (recovery->writer)
-		recovery_update_mode(recovery, mode);
 }
 
 extern "C" void
@@ -435,7 +430,7 @@ box_set_panic_on_wal_error(void)
  * @note Since this is for internal use, it has
  * no boundary or misuse checks.
  */
-void
+static void
 boxk(enum iproto_type type, uint32_t space_id, const char *format, ...)
 {
 	struct request req;
@@ -642,7 +637,7 @@ box_upsert(uint32_t space_id, uint32_t index_id, const char *tuple,
 /**
  * @brief Called when recovery/replication wants to add a new server
  * to cluster.
- * cluster_add_server() is called as a commit trigger on cluster
+ * server_set_id() is called as a commit trigger on cluster
  * space and actually adds the server to the cluster.
  * @param server_uuid
  */
@@ -653,16 +648,176 @@ box_on_cluster_join(const tt_uuid *server_uuid)
 	struct space *space = space_cache_find(BOX_CLUSTER_ID);
 	class MemtxIndex *index = index_find_system(space, 0);
 	struct iterator *it = index->position();
-	index->initIterator(it, ITER_LE, NULL, 0);
-	struct tuple *tuple = it->next(it);
+	index->initIterator(it, ITER_ALL, NULL, 0);
+	struct tuple *tuple;
 	/** Assign a new server id. */
-	uint32_t server_id = tuple ? tuple_field_u32(tuple, 0) + 1 : 1;
+	uint32_t server_id = 1;
+	while ((tuple = it->next(it))) {
+		if (tuple_field_u32(tuple, 0) != server_id)
+			break;
+		server_id++;
+	}
 	boxk(IPROTO_INSERT, BOX_CLUSTER_ID, "%u%s",
 	     (unsigned) server_id, tt_uuid_str(server_uuid));
 }
 
+static inline struct func *
+access_check_func(const char *name, uint32_t name_len)
+{
+	struct func *func = func_by_name(name, name_len);
+	struct credentials *credentials = current_user();
+	/*
+	 * If the user has universal access, don't bother with checks.
+	 * No special check for ADMIN user is necessary
+	 * since ADMIN has universal access.
+	 */
+	if ((credentials->universal_access & PRIV_ALL) == PRIV_ALL)
+		return func;
+	uint8_t access = PRIV_X & ~credentials->universal_access;
+	if (func == NULL || (func->def.uid != credentials->uid &&
+	     access & ~func->access[credentials->auth_token].effective)) {
+		/* Access violation, report error. */
+		char name_buf[BOX_NAME_MAX + 1];
+		snprintf(name_buf, sizeof(name_buf), "%.*s", name_len, name);
+		struct user *user = user_find_xc(credentials->uid);
+		tnt_raise(ClientError, ER_FUNCTION_ACCESS_DENIED,
+			  priv_name(access), user->def.name, name_buf);
+	}
+
+	return func;
+}
+
+int
+func_call(struct func *func, struct request *request, struct obuf *out)
+{
+	assert(func != NULL && func->def.language == FUNC_LANGUAGE_C);
+	if (func->func == NULL)
+		func_load(func);
+
+	/* Create a call context */
+	struct port_buf port_buf;
+	port_buf_create(&port_buf);
+	box_function_ctx_t ctx = { request, &port_buf.base };
+
+	/* Clear all previous errors */
+	diag_clear(&fiber()->diag);
+	assert(!in_txn()); /* transaction is not started */
+	/* Call function from the shared library */
+	int rc = func->func(&ctx, request->tuple, request->tuple_end);
+	if (rc != 0) {
+		if (diag_last_error(&fiber()->diag) == NULL) {
+			/* Stored procedure forget to set diag  */
+			diag_set(ClientError, ER_PROC_C, "unknown error");
+		}
+		goto error;
+	}
+
+	/* Push results to obuf */
+	struct obuf_svp svp;
+	if (iproto_prepare_select(out, &svp) != 0)
+		goto error;
+
+	for (struct port_buf_entry *entry = port_buf.first;
+	     entry != NULL; entry = entry->next) {
+		if (tuple_to_obuf(entry->tuple, out) != 0) {
+			obuf_rollback_to_svp(out, &svp);
+			goto error;
+		}
+	}
+	iproto_reply_select(out, &svp, request->header->sync,
+			    port_buf.size);
+
+	port_buf_destroy(&port_buf);
+
+	return 0;
+
+error:
+	port_buf_destroy(&port_buf);
+	txn_rollback();
+	return -1;
+}
+
 void
-box_process_join(int fd, struct xrow_header *header)
+box_process_call(struct request *request, struct obuf *out)
+{
+	/**
+	 * Find the function definition and check access.
+	 */
+	const char *name = request->key;
+	uint32_t name_len = mp_decode_strl(&name);
+	struct func *func = access_check_func(name, name_len);
+	/*
+	 * Sic: func == NULL means that perhaps the user has a global
+	 * "EXECUTE" privilege, so no specific grant to a function.
+	 */
+
+	/**
+	 * Change the current user id if the function is
+	 * a set-definer-uid one. If the function is not
+	 * defined, it's obviously not a setuid one.
+	 */
+	struct credentials *orig_credentials = NULL;
+	if (func && func->def.setuid) {
+		orig_credentials = current_user();
+		/* Remember and change the current user id. */
+		if (func->owner_credentials.auth_token >= BOX_USER_MAX) {
+			/*
+			 * Fill the cache upon first access, since
+			 * when func is created, no user may
+			 * be around to fill it (recovery of
+			 * system spaces from a snapshot).
+			 */
+			struct user *owner = user_find_xc(func->def.uid);
+			credentials_init(&func->owner_credentials, owner);
+		}
+		fiber_set_user(fiber(), &func->owner_credentials);
+	}
+
+	int rc;
+	if (func && func->def.language == FUNC_LANGUAGE_C) {
+		rc = func_call(func, request, out);
+	} else {
+		rc = box_lua_call(request, out);
+	}
+	/* Restore the original user */
+	if (orig_credentials)
+		fiber_set_user(fiber(), orig_credentials);
+
+	if (rc != 0) {
+		txn_rollback();
+		diag_raise();
+	}
+
+	if (in_txn()) {
+		/* The procedure forgot to call box.commit() */
+		say_warn("a transaction is active at return from '%.*s'",
+			name_len, name);
+		txn_rollback();
+	}
+}
+
+void
+box_process_eval(struct request *request, struct obuf *out)
+{
+	/* Check permissions */
+	access_check_universe(PRIV_X);
+	if (box_lua_eval(request, out) != 0) {
+		txn_rollback();
+		diag_raise();
+	}
+
+	if (in_txn()) {
+		/* The procedure forgot to call box.commit() */
+		const char *expr = request->key;
+		uint32_t expr_len = mp_decode_strl(&expr);
+		say_warn("a transaction is active at return from EVAL '%.*s'",
+			expr_len, expr);
+		txn_rollback();
+	}
+}
+
+void
+box_process_join(struct ev_io *io, struct xrow_header *header)
 {
 	/* Check permissions */
 	access_check_universe(PRIV_R);
@@ -670,16 +825,91 @@ box_process_join(int fd, struct xrow_header *header)
 
 	assert(header->type == IPROTO_JOIN);
 
+	struct tt_uuid server_uuid = uuid_nil;
+	xrow_decode_join(header, &server_uuid);
+
+	struct vclock join_vclock;
+	vclock_create(&join_vclock);
+
 	/* Process JOIN request via a replication relay */
-	relay_join(fd, header, recovery->server_id,
-		   box_on_cluster_join);
+	relay_join(io->fd, header->sync, &join_vclock);
+
+	/**
+	 * Call the server-side hook which stores the replica uuid
+	 * in _cluster space after sending the last row but before
+	 * sending OK - if the hook fails, the error reaches the
+	 * client.
+	 */
+	box_on_cluster_join(&server_uuid);
+
+	/*
+	 * Send a response to JOIN request, an indicator of the
+	 * end of the stream of snapshot rows.
+	 */
+	struct xrow_header row;
+	xrow_encode_vclock(&row, &join_vclock);
+	/*
+	 * Identify the message with the server id of this
+	 * server, this is the only way for a replica to find
+	 * out the id of the server it has connected to.
+	 */
+	row.server_id = recovery->server_id;
+	row.sync = header->sync;
+	coio_write_xrow(io, &row);
 }
 
 void
-box_process_subscribe(int fd, struct xrow_header *header)
+box_process_subscribe(struct ev_io *io, struct xrow_header *header)
 {
 	/* Check permissions */
 	access_check_universe(PRIV_R);
+
+	struct tt_uuid cluster_uuid = uuid_nil, replica_uuid = uuid_nil;
+	struct vclock replica_clock;
+	vclock_create(&replica_clock);
+	xrow_decode_subscribe(header, &cluster_uuid, &replica_uuid,
+			      &replica_clock);
+
+	/**
+	 * Check that the given UUID matches the UUID of the
+	 * cluster this server belongs to. Used to handshake
+	 * replica connect, and refuse a connection from a replica
+	 * which belongs to a different cluster.
+	 */
+	if (!tt_uuid_is_equal(&cluster_uuid, &cluster_id)) {
+		tnt_raise(ClientError, ER_CLUSTER_ID_MISMATCH,
+			  tt_uuid_str(&cluster_uuid),
+			  tt_uuid_str(&cluster_id));
+	}
+
+	/* Check server uuid */
+	struct server *server = server_by_uuid(&replica_uuid);
+	if (server == NULL || server->id == SERVER_ID_NIL) {
+		tnt_raise(ClientError, ER_UNKNOWN_SERVER,
+			  tt_uuid_str(&replica_uuid));
+	}
+
+	/* Don't allow multiple relays for the same server */
+	if (server->relay != NULL) {
+		tnt_error(ClientError, ER_CFG, "replication_source",
+			  "duplicate connection with the same replica UUID");
+	}
+
+	/*
+	 * Send a response to SUBSCRIBE request, tell
+	 * the replica how many rows we have in stock for it,
+	 * and identify ourselves with our own server id.
+	 */
+	struct xrow_header row;
+	xrow_encode_vclock(&row, &recovery->vclock);
+	/*
+	 * Identify the message with the server id of this
+	 * server, this is the only way for a replica to find
+	 * out the id of the server it has connected to.
+	 */
+	row.server_id = recovery->server_id;
+	row.sync = header->sync;
+	coio_write_xrow(io, &row);
 
 	/*
 	 * Process SUBSCRIBE request via replication relay
@@ -693,8 +923,7 @@ box_process_subscribe(int fd, struct xrow_header *header)
 	 * a stall in updates (in this case replica may hang
 	 * indefinitely).
 	 */
-	relay_subscribe(fd, header, recovery->server_id,
-			&recovery->vclock);
+	relay_subscribe(io->fd, header->sync, server, &replica_clock);
 }
 
 /** Replace the current server id in _cluster */
@@ -752,8 +981,6 @@ box_free(void)
 		schema_free();
 		tuple_free();
 		port_free();
-		rmean_delete(rmean_error);
-		rmean_delete(rmean_box);
 #endif
 		engine_shutdown();
 	}
@@ -798,9 +1025,71 @@ thread_pool_trim()
 	;
 }
 
+/**
+ * Initialize the first server of a new cluster
+ */
+static void
+bootstrap_cluster(void)
+{
+	/* Add a surrogate server id for snapshot rows */
+	vclock_add_server(&recovery->vclock, 0);
+
+	/* Process bootstrap.bin */
+	recovery_bootstrap(recovery);
+
+	/* Generate UUID of a new cluster */
+	box_set_cluster_uuid();
+
+	/* Generate Server-UUID */
+	box_set_server_uuid();
+}
+
+/**
+ * Bootstrap from the remote master
+ */
+static void
+bootstrap_from_master(struct server *master)
+{
+	assert(master->applier != NULL);
+
+	/* Generate Server-UUID */
+	tt_uuid_create(&recovery->server_uuid);
+
+	/* Initialize a new replica */
+	engine_begin_join();
+
+	/* Add a surrogate server id for snapshot rows */
+	vclock_add_server(&recovery->vclock, 0);
+
+	/* Download and process a data snapshot from master */
+	applier_bootstrap(master->applier);
+
+	/* Replace server vclock using master's vclock */
+	vclock_copy(&recovery->vclock, &master->applier->vclock);
+}
+
+static void
+bootstrap(void)
+{
+	/* Use the first replica by URI as a bootstrap leader */
+	struct server *master = server_first();
+	assert(master == NULL || master->applier != NULL);
+
+	if (master != NULL && !box_cfg_listen_eq(&master->applier->uri)) {
+		bootstrap_from_master(master);
+	} else {
+		bootstrap_cluster();
+	}
+
+	int64_t checkpoint_id = vclock_sum(&recovery->vclock);
+	engine_checkpoint(checkpoint_id);
+}
+
 static inline void
 box_init(void)
 {
+	error_init();
+
 	tuple_init(cfg_getd("slab_alloc_arena"),
 		   cfg_geti("slab_alloc_minimal"),
 		   cfg_geti("slab_alloc_maximal"),
@@ -839,37 +1128,14 @@ box_init(void)
 	 * but don't start replication right now.
 	 */
 	box_sync_replication_source();
-	/* Use the first replica by URI as a bootstrap leader */
-	struct applier *applier = cluster_applier_first();
 
 	if (recovery_has_data(recovery)) {
 		/* Tell Sophia engine LSN it must recover to. */
 		int64_t checkpoint_id =
 			recovery_last_checkpoint(recovery);
 		engine_recover_to_checkpoint(checkpoint_id);
-	} else if (applier != NULL && !box_cfg_listen_eq(&applier->uri)) {
-		/* Generate Server-UUID */
-		tt_uuid_create(&recovery->server_uuid);
-
-		/* Initialize a new replica */
-		engine_begin_join();
-
-		/* Add a surrogate server id for snapshot rows */
-		vclock_add_server(&recovery->vclock, 0);
-
-		/* Bootstrap from the first master */
-		applier_start(applier, recovery);
-		applier_wait(applier); /* throws on failure */
-
-		int64_t checkpoint_id = vclock_sum(&recovery->vclock);
-		engine_checkpoint(checkpoint_id);
 	} else {
-		/* Initialize the first server of a new cluster */
-		recovery_bootstrap(recovery);
-		box_set_cluster_uuid();
-		box_set_server_uuid();
-		int64_t checkpoint_id = vclock_sum(&recovery->vclock);
-		engine_checkpoint(checkpoint_id);
+		 bootstrap();
 	}
 	fiber_gc();
 
@@ -896,7 +1162,10 @@ box_init(void)
 	rmean_cleanup(rmean_box);
 
 	/* Follow replica */
-	box_set_replication_source();
+	server_foreach(server) {
+		if (server->applier != NULL)
+			applier_resume(server->applier);
+	}
 
 	/* Enter read-write mode. */
 	if (recovery->server_id > 0)
@@ -919,14 +1188,14 @@ box_load_cfg()
 	}
 }
 
+/**
+ * box.coredump() forks to save a core. The entire
+ * server forks in box.cfg{} if background=true.
+ */
 void
 box_atfork()
 {
-	/* NULL when forking for box.cfg{background = true} */
-	if (recovery == NULL)
-		return;
-	/* box.coredump() forks to save a core. */
-	recovery_atfork(recovery);
+	wal_atfork();
 }
 
 int

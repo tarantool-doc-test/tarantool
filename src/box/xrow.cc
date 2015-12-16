@@ -36,6 +36,8 @@
 #include "third_party/base64.h"
 #include "iproto_constants.h"
 #include "version.h"
+#include "coio.h"
+#include "coio_buf.h"
 
 enum { HEADER_LEN_MAX = 40, BODY_LEN_MAX = 128 };
 
@@ -75,6 +77,9 @@ error:
 			break;
 		case IPROTO_TIMESTAMP:
 			header->tm = mp_decode_double(pos);
+			break;
+		case IPROTO_SCHEMA_ID:
+			header->schema_id = mp_decode_uint(pos);
 			break;
 		default:
 			/* unknown header */
@@ -253,7 +258,8 @@ xrow_decode_error(struct xrow_header *row)
 	}
 
 raise:
-	tnt_raise(ClientError, error, code);
+	box_error_set(__FILE__, __LINE__, code, error);
+	diag_raise();
 }
 
 void

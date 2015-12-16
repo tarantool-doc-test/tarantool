@@ -7,27 +7,29 @@
 .. toctree::
     :maxdepth: 1
 
+    box
+    box_error
+    clock
+    console
+    csv
     digest
-    uuid
-    json
-    yaml
-    msgpack
+    expirationd
     fiber
     fiber-ipc
-    socket
     fio
-    console
-    log
-    tap
     fun
-    pickle
-    other
-    expirationd
-    shard
-    tarantool
     jit
+    json
+    log
+    msgpack
+    net_box
+    pickle
+    shard
+    socket
     strict
-    csv
-    box
+    tap
+    tarantool
+    uuid
+    yaml
+    other
     capi
-
