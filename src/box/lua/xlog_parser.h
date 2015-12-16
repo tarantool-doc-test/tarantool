@@ -32,6 +32,15 @@
  */
 
 struct lua_State;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void box_lua_xlog_parser_init(struct lua_State *L);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* INCLUDES_TARANTOOL_LUA_XLOG_PARSER_H */
