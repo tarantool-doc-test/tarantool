@@ -425,14 +425,17 @@ error:
 	(void) crc32p;
 
 	/* Allocate memory for body */
-	char *bodybuf = (char *) region_alloc_xc(&fiber()->gc, len);
+	char *bodybuf = (char *) region_alloc_xc(&fiber()->gc, len +
+						 sizeof(void*));
+	*((void **)(bodybuf + len)) = NULL;
+	/* add sizeof(void*) zeros for corrupted files */
 
 	/* Read header and body */
 	if (fread(bodybuf, len, 1, f) != 1)
 		return 1;
 
 	/* Validate checksum */
-	if (crc32_calc(0, bodybuf, len) != crc32c) {
+	if (!row->crc_not_check && crc32_calc(0, bodybuf, len) != crc32c) {
 		char buf[PATH_MAX];
 
 		snprintf(buf, sizeof(buf), "%s: row checksum mismatch (expected %u)"
