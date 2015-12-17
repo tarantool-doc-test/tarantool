@@ -192,12 +192,11 @@ wal_writer_start(enum wal_mode wal_mode, const char *wal_dirname,
 	cbus_join(&writer->tx_wal_bus, &writer->tx_pipe);
 }
 
-static int
-wal_writer_stop_f(va_list ap)
+static void
+wal_writer_stop_f(struct cmsg *msg)
 {
-	struct wal_writer *writer = va_arg(ap, struct wal_writer *);
-	fiber_cancel(writer->main_f);
-	return 0;
+	(void) msg;
+	fiber_wakeup(wal->main_f);
 }
 
 /** Stop and destroy the writer thread (at shutdown). */
@@ -207,8 +206,13 @@ wal_writer_stop()
 	struct wal_writer *writer = wal;
 
 	/* Stop the worker thread. */
+	struct cmsg wakeup;
+	struct cmsg_hop route[1] = { wal_writer_stop_f, NULL };
+	cmsg_init(&wakeup, route);
 
-	cbus_invoke(&writer->tx_wal_bus, wal_writer_stop_f, writer);
+	cpipe_push(&writer->wal_pipe, &wakeup);
+	ev_invoke(writer->wal_pipe.producer,
+		  &writer->wal_pipe.flush_input, EV_CUSTOM);
 
 	if (cord_join(&writer->cord)) {
 		/* We can't recover from this in any reasonable way. */
