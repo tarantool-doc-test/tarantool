@@ -75,6 +75,7 @@ add_library(box
     lua/session.c
     lua/net_box.c
     lua/xlog_parser.cc
+    lua/xlog_parser_v12.cc
     ${bin_sources})
 
 target_link_libraries(box ${sophia_lib})
