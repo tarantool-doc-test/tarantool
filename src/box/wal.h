@@ -33,6 +33,7 @@
 #include <stdint.h>
 #include "cbus.h"
 #include "small/rlist.h"
+#include "salad/stailq.h"
 
 struct fiber;
 struct wal_writer;
@@ -46,10 +47,13 @@ extern struct wal_writer *wal;
 
 #if defined(__cplusplus)
 
-struct wal_request: public cmsg {
+struct wal_request {
+	struct stailq_entry fifo;
 	/* Auxiliary. */
 	int64_t res;
 	struct fiber *fiber;
+	/* To batch requests. */
+	struct stailq batch;
 	/* Relative position of the start of request (used for rollback) */
 	off_t start_offset;
 	/* Relative position of the end of request (used for rollback) */
