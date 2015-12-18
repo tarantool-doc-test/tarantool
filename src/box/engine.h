@@ -31,6 +31,7 @@
  * SUCH DAMAGE.
  */
 #include "index.h"
+#include <stdint.h>
 
 struct request;
 struct space;
@@ -97,7 +98,7 @@ public:
 	 */
 	virtual bool needToBuildSecondaryKey(struct space *space);
 
-	virtual void join(struct relay *);
+	virtual int64_t join(struct relay *);
 	/**
 	 * Begin a new single or multi-statement transaction.
 	 * Called on first statement in a transaction, not when
@@ -258,8 +259,10 @@ engine_checkpoint(int64_t checkpoint_id);
 
 /**
  * Send a snapshot.
+ * Returns lsn of record that must be restored from xlog up to
+ *  or -1 if engine does not need it
  */
-void
+int64_t
 engine_join(struct relay *);
 
 #endif /* TARANTOOL_BOX_ENGINE_H_INCLUDED */

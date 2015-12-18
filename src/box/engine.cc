@@ -129,10 +129,11 @@ Engine::recoverToCheckpoint(int64_t /* lsn */)
 {
 }
 
-void
+int64_t
 Engine::join(struct relay *relay)
 {
 	(void) relay;
+	return -1;
 }
 
 void
@@ -326,11 +327,14 @@ error:
 	return save_errno;
 }
 
-void
+int64_t
 engine_join(struct relay *relay)
 {
 	Engine *engine;
+	int64_t max_checkpoint = -1;
 	engine_foreach(engine) {
-		engine->join(relay);
+		int64_t checkpoint = engine->join(relay);
+		max_checkpoint = MAX(max_checkpoint, checkpoint);
 	}
+	return max_checkpoint;
 }

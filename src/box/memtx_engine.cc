@@ -593,7 +593,7 @@ recover_snap(struct recovery *r)
 	vclock_add_server(&r->vclock, 0);
 
 	say_info("recovering from `%s'", snap->filename);
-	recover_xlog(r, snap);
+	recover_xlog(r, snap, LSN_INFINITE);
 }
 
 /** Called at start to tell memtx to recover to a given LSN. */
@@ -1202,10 +1202,11 @@ MemtxEngine::abortCheckpoint()
 	m_checkpoint = 0;
 }
 
-void
+int64_t
 MemtxEngine::join(struct relay *relay)
 {
 	recover_snap(relay->r);
+	return -1;
 }
 
 /**

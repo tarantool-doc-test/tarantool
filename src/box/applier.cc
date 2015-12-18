@@ -176,7 +176,7 @@ applier_join(struct applier *applier, struct recovery *r)
 			break;
 		} else if (iproto_type_is_dml(row.type)) {
 			/* Regular snapshot row  (IPROTO_INSERT) */
-			recovery_apply_row(r, &row);
+			r->apply_row(r, r->apply_row_param, &row);
 		} else /* error or unexpected packet */ {
 			xrow_decode_error(&row);  /* rethrow error */
 		}

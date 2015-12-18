@@ -59,7 +59,7 @@ struct MemtxEngine: public Engine {
 	virtual void beginJoin();
 	virtual void recoverToCheckpoint(int64_t lsn);
 	virtual void endRecovery();
-	virtual void join(struct relay *relay);
+	virtual int64_t join(struct relay *relay);
 	virtual int beginCheckpoint(int64_t);
 	virtual int waitCheckpoint();
 	virtual void commitCheckpoint();

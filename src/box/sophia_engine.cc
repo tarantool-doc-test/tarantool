@@ -334,7 +334,6 @@ static inline void
 sophia_send_row(struct relay *relay, uint32_t space_id, char *tuple,
                 uint32_t tuple_size, int64_t lsn)
 {
-	struct recovery *r = relay->r;
 	struct request_replace_body body;
 	body.m_body = 0x82; /* map of two elements. */
 	body.k_space_id = IPROTO_SPACE_ID;
@@ -344,9 +343,7 @@ sophia_send_row(struct relay *relay, uint32_t space_id, char *tuple,
 	struct xrow_header row;
 	row.type = IPROTO_INSERT;
 	row.server_id = 0;
-	/* TODO: lsn */
-	(void)lsn;
-	row.lsn = vclock_inc(&r->vclock, row.server_id);
+	row.lsn = lsn;
 	row.bodycnt = 2;
 	row.body[0].iov_base = &body;
 	row.body[0].iov_len = sizeof(body);
@@ -388,7 +385,7 @@ sophia_join_key_def(void *env, void *db)
  * Relay all data currently stored in Sophia engine
  * to the replica.
  */
-void
+int64_t
 SophiaEngine::join(struct relay *relay)
 {
 	/* iterate through a list of databases currently used
@@ -441,6 +438,7 @@ SophiaEngine::join(struct relay *relay)
 		key_def_delete(key_def);
 	}
 	sp_destroy(db_cursor);
+	return (int64_t)sp_getint(env, "metric.lsn");
 }
 
 Index*
@@ -610,9 +608,6 @@ SophiaEngine::rollback(struct txn *txn)
 void
 SophiaEngine::beginJoin()
 {
-	/* put engine to recovery-complete state to
-	 * correctly support join */
-	endRecovery();
 }
 
 void

@@ -37,6 +37,8 @@
 #include "tt_uuid.h"
 #include "wal.h"
 
+static const int64_t LSN_INFINITE = INT64_MAX;
+
 #if defined(__cplusplus)
 extern "C" {
 #endif /* defined(__cplusplus) */
@@ -99,7 +101,7 @@ void
 recovery_bootstrap(struct recovery *r);
 
 void
-recover_xlog(struct recovery *r, struct xlog *l);
+recover_xlog(struct recovery *r, struct xlog *l, int64_t to_checkpoint);
 
 void
 recovery_follow_local(struct recovery *r, const char *name,
@@ -124,6 +126,20 @@ recovery_apply_row(struct recovery *r, struct xrow_header *packet);
  */
 int64_t
 recovery_last_checkpoint(struct recovery *r);
+
+/**
+ * Find out if there are new .xlog files since the current
+ * LSN, and read them all up.
+ *
+ * Reading will be stopped on reaching recovery
+ * vclock signature > to_checkpoint (after playing to_checkpoint record)
+ * use LSN_INFINITE for boundless recover
+ *
+ * This function will not close r->current_wal if
+ * recovery was successful.
+ */
+void
+recover_remaining_wals(struct recovery *r, int64_t to_checkpoint);
 
 #if defined(__cplusplus)
 } /* extern "C" */
