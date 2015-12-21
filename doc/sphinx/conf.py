@@ -34,6 +34,8 @@ release = open('../../../VERSION').read().strip()
 # |version| The short X.Y version.
 version = '.'.join(release.split('.')[0:2])
 
+language = 'ru'
+
 exclude_patterns = [
     '_build',
     'book/connectors/__*',
