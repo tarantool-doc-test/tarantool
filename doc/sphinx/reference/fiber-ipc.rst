@@ -2,101 +2,116 @@
                                  Package `fiber-ipc`
 -------------------------------------------------------------------------------
 
-The ``fiber-ipc`` package allows sending and receiving messages between
-different processes. The words "different processes" in this context
-mean different connections, different sessions, or different fibers.
+Пакет ``fiber-ipc`` позволяет разным процессам взаимодействовать путем отсылки и
+приема сообщений. Здесь под "разными процессами" подразумеваются разные
+соединения, разные сессии или разные файберы.
 
-Call ``fiber.channel()`` to allocate space and get a channel object,
-which will be called channel for examples in this section. Call the
-other ``fiber-ipc`` routines, via channel, to send messages, receive
-messages, or check ipc status. Message exchange is synchronous. The
-channel is garbage collected when no one is using it, as with any
-other Lua object. Use object-oriented syntax, for example
-``channel:put(message)`` rather than ``fiber.channel.put(message)``.
+Вызовите функцию ``fiber.channel()``, чтобы создать объект типа канал. Далее в
+этом разделе мы будем называть этот объект каналом. Затем вызывайте для этого
+канала другие функции из пакета ``fiber-ipc``, чтобы отсылать сообщения,
+принимать сообщения или проверять статус канала. Обмен сообщениями происходит в
+синхронном режиме. Если канал никем не используется, он уничтожается сборщиком
+мусора, как это происходит с любым Lua-объектом. Используйте
+объектно-ориентированный синтаксис, например, ``channel:put(message)`` вместо
+``fiber.channel.put(message)``.
 
 .. module:: fiber
 
 .. function:: channel([capacity])
 
-    Create a new communication channel.
+    Создает новый канал для обмена сообщениями.
 
-    :param int capacity: positive integer as great as the maximum number of
-                         slots (spaces for ``get`` or ``put`` messages)
-                         that might be pending at any given time.
+    :param int capacity: количество слотов в канале для хранения отсылаемых
+                         сообщений (положительное целое число). Определяет
+                         максимальное количество сообщений, которые могут
+                         храниться в канале.
 
-    :return: new channel.
+    :return: новый канал.
     :rtype:  userdata
 
 .. class:: channel_object
 
     .. method:: put(message[, timeout])
 
-        Send a message using a channel. If the channel is full,
-        ``channel:put()`` blocks until there is a free slot in the channel.
+        Отсылает сообщение, используя указанный канал. Если канал полон
+        (все слоты заполнены), ждет, пока в канале не появится свободный слот.
 
-        :param lua_object message:
-        :param timeout:
-        :return: If timeout is provided, and the channel doesn't become empty for
-                the duration of the timeout, ``channel:put()`` returns false.
-                Otherwise it returns true.
+        :param lua_object message: сообщение для отсылки.
+        :param timeout: максимальное время ожидания появления свободного слота
+                        в канале (в секундах); если параметр не задан, ожидание
+                        выполняется бесконечно.
+        :return: false -- если задано время ожидания и в канале не появляется
+                 свободный слот в течение этого периода времени. true -- в
+                 противном случае.
         :rtype:  boolean
 
     .. method:: close()
 
-        Close the channel. All waiters in the channel will be woken up.
-        All following ``channel:put()`` or ``channel:get()`` operations will
-        return an error (``nil``).
+        Закрывает канал. Все вызовы функций на данном канале, которые находятся
+        в состоянии ожидания, будут разблокированы. Все последующие вызовы функций
+        ``channel:put()`` и ``channel:get()`` вернут ошибку (``nil``).
 
     .. method:: get([timeout])
 
-        Fetch a message from a channel. If the channel is empty,
-        ``channel:get()`` blocks until there is a message.
+        Извлекает сообщение из канала. Если канал пуст (в канале нет сообщений),
+        ждет прихода сообщения.
 
-        :param timeout:
-        :return: the value placed on the channel by an earlier
-                ``channel:put()``.
+        :param timeout: максимальное время ожидания прихода сообщения (в
+                        секундах); если параметр не задан, ожидание выполняется
+                        бесконечно.
+        :return: сообщение, ранее помещенное в канал вызовом функции
+                 ``channel:put()``.
         :rtype:  lua_object
 
     .. method:: is_empty()
 
-        Check whether the specified channel is empty (has no messages).
+        Проверяет, является ли канал пустым (т.е. в канале отсутствуют
+        сообщения).
 
-        :return: true if the specified channel is empty
+        :return: true -- если канал пуст. false -- в противном случае.
         :rtype:  boolean
 
     .. method:: count()
 
-        Find out how many messages are on the channel. The answer is 0 if the channel is empty.
+        Подсчитывает количество сообщений в канале.
 
-        :return: the number of messages.
+        :return: количество сообщений в канале (ноль, если канал пуст).
         :rtype:  number
 
     .. method:: is_full()
 
-        Check whether the specified channel is full.
+        Проверяет, является ли канал полным (т.е. в канале нет места для новых
+        сообщений).
 
-        :return: true if the specified channel is full (has no room for a new message).
+        :return: true -- если канал полон. false -- в противном случае.
         :rtype:  boolean
 
     .. method:: has_readers()
 
-        Check whether the specified channel is empty and has readers waiting for
-        a message (because they have issued ``channel:get()`` and then blocked).
+        Проверяет, является ли канал пустым, и есть ли при этом пользователи,
+        которые ранее вызвали функцию ``channel:get()`` и теперь ждут сообщений
+        из канала.
 
-        :return: true if blocked users are waiting. Otherwise false.
+        :return: true -- если есть пользователи, ждущие сообщений из канала.
+                 false -- в противном случае.
         :rtype:  boolean
 
     .. method:: has_writers()
 
-        Check whether the specified channel is full and has writers waiting
-        (because they have issued ``channel:put()`` and then blocked due to lack of room).
+        Проверяет, является ли канал полным, и есть ли при этом пользователи,
+        которые ранее вызвали функцию ``channel:put()`` и теперь ждут, когда в
+        канале освободится место для новых сообщений.
 
-        :return: true if blocked users are waiting. Otherwise false.
+        :return: true -- если есть пользователи, ждущие, когда в канале
+                 освободится место для новых сообщений. false -- в противном
+                 случае.
         :rtype:  boolean
 
     .. method:: is_closed()
 
-        :return: true if the specified channel is already closed. Otherwise false.
+        Проверяет, закрыт ли указанный канал.
+
+        :return: true -- если канал закрыт. false -- в противном случае.
         :rtype:  boolean
 
 =================================================
@@ -116,7 +131,7 @@ other Lua object. Use object-oriented syntax, for example
 
     function consumer2_fiber()
         while true do
-            -- 10 seconds
+            -- 10 секунд
             local task = channel:get(10)
             if task ~= nil then
                 ...
@@ -131,23 +146,23 @@ other Lua object. Use object-oriented syntax, for example
             task = box.space...:select{...}
             ...
             if channel:is_empty() then
-                -- channel is empty
+                -- канал пуст
             end
 
             if channel:is_full() then
-                -- channel is full
+                -- канал полон
             end
 
             ...
             if channel:has_readers() then
-                -- there are some fibers
-                -- that are waiting for data
+                -- есть файберы, которые
+                -- ждут данные из канала
             end
             ...
 
             if channel:has_writers() then
-                -- there are some fibers
-                -- that are waiting for readers
+                -- есть файберы, которые ждут,
+                -- что кто-то прочтет данные из канала
             end
             channel:put(task)
         end
@@ -156,7 +171,7 @@ other Lua object. Use object-oriented syntax, for example
     function producer2_fiber()
         while true do
             task = box.space...select{...}
-            -- 10 seconds
+            -- 10 секунд
             if channel:put(task, 10) then
                 ...
             else
