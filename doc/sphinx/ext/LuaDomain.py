@@ -352,7 +352,7 @@ class LuaFunction(LuaObject):
         Field('returnvalue', label=l_('Returns'), has_arg=False,
               names=('returns')),
         Field('returntype', label=l_('Return type'), has_arg=False,
-              names=('returntype',)),
+              names=('rtype',)),
     ]
 
     def build_objtype(self):
@@ -436,7 +436,7 @@ class LuaOperator(LuaObject):
         Field('returnvalue', label=l_('Returns'), has_arg=False,
               names=('returns')),
         Field('returntype', label=l_('Return type'), has_arg=False,
-              names=('returntype',)),
+              names=('rtype',)),
     ]
 
     lua_signature_unary_re = re.compile(
